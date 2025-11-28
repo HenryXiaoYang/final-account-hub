@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.p-tooltip {
+    max-width: 600px !important;
+}
+
+.p-tooltip .p-tooltip-text {
+    background-color: #f5f5f5 !important;
+    color: #333 !important;
+    word-break: break-all !important;
+    white-space: normal !important;
+}
+
+.app-dark .p-tooltip .p-tooltip-text {
+    background-color: #333 !important;
+    color: #f5f5f5 !important;
+}

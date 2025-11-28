@@ -50,7 +50,13 @@ func GetCategories(c *gin.Context) {
 
 func DeleteCategory(c *gin.Context) {
 	id := c.Param("id")
-	database.DB.Delete(&database.Category{}, id)
-	database.DB.Where("category_id = ?", id).Delete(&database.Account{})
+	if err := database.DB.Where("category_id = ?", id).Delete(&database.Account{}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := database.DB.Delete(&database.Category{}, id).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
 }

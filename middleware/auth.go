@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"crypto/subtle"
 	"net/http"
 	"os"
 
@@ -11,11 +12,13 @@ func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		passkey := os.Getenv("PASSKEY")
 		if passkey == "" {
-			passkey = "default-passkey"
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Server misconfigured"})
+			c.Abort()
+			return
 		}
 
 		providedKey := c.GetHeader("X-Passkey")
-		if providedKey != passkey {
+		if subtle.ConstantTimeCompare([]byte(providedKey), []byte(passkey)) != 1 {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid passkey"})
 			c.Abort()
 			return

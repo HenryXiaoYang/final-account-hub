@@ -173,6 +173,13 @@
   -d '{"category_id": 1, "data": "{\"username\": \"user\"}"}'</code></pre>
               </div>
               <div>
+                <div class="font-semibold mb-1">Add Accounts (Bulk)</div>
+                <pre class="text-xs bg-surface-100 dark:bg-surface-800 p-3 rounded overflow-x-auto m-0"><code>curl -X POST {{ baseUrl }}/api/accounts/bulk \
+  -H "X-Passkey: YOUR_PASSKEY" \
+  -H "Content-Type: application/json" \
+  -d '{"category_id": 1, "data": ["account1", "account2"]}'</code></pre>
+              </div>
+              <div>
                 <div class="font-semibold mb-1">Fetch Account (marks as used)</div>
                 <pre class="text-xs bg-surface-100 dark:bg-surface-800 p-3 rounded overflow-x-auto m-0"><code>curl -X POST {{ baseUrl }}/api/accounts/fetch \
   -H "X-Passkey: YOUR_PASSKEY" \
@@ -225,26 +232,7 @@ const newAccountData = ref('')
 const selectedAccountsObj = ref([])
 const chartData = ref({})
 const globalStats = ref({ categories: 0, accounts: { total: 0, available: 0, used: 0, banned: 0 }, chart: [] })
-const globalChartData = computed(() => {
-  const stats = globalStats.value.chart || {}
-  const dates = new Set([
-    ...(stats.added || []).map(s => s.date),
-    ...(stats.used || []).map(s => s.date),
-    ...(stats.banned || []).map(s => s.date)
-  ])
-  const labels = [...dates].sort()
-  const addedMap = Object.fromEntries((stats.added || []).map(s => [s.date, s.count]))
-  const usedMap = Object.fromEntries((stats.used || []).map(s => [s.date, s.count]))
-  const bannedMap = Object.fromEntries((stats.banned || []).map(s => [s.date, s.count]))
-  return {
-    labels,
-    datasets: [
-      { label: 'Added', data: labels.map(d => addedMap[d] || 0), borderColor: '#22c55e', tension: 0.4 },
-      { label: 'Used', data: labels.map(d => usedMap[d] || 0), borderColor: '#f59e0b', tension: 0.4 },
-      { label: 'Banned', data: labels.map(d => bannedMap[d] || 0), borderColor: '#ef4444', tension: 0.4 }
-    ]
-  }
-})
+const globalChartData = computed(() => buildChartData(globalStats.value.chart || {}))
 const { isDarkTheme } = useLayout()
 const chartOptions = computed(() => {
   const textColor = isDarkTheme.value ? '#fff' : '#333'
@@ -310,9 +298,11 @@ const copyData = (text) => {
 
 const addAccount = async () => {
   if (!newAccountData.value) return
-  const lines = newAccountData.value.split('\n').filter(l => l.trim())
-  for (const line of lines) {
-    await api.addAccount(Number(categoryId.value), line.trim())
+  const lines = newAccountData.value.split('\n').filter(l => l.trim()).map(l => l.trim())
+  if (lines.length === 1) {
+    await api.addAccount(Number(categoryId.value), lines[0])
+  } else {
+    await api.addAccountsBulk(Number(categoryId.value), lines)
   }
   toast.add({ severity: 'success', summary: 'Success', detail: `${lines.length} account(s) added`, life: 3000 })
   newAccountData.value = ''

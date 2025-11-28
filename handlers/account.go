@@ -7,6 +7,7 @@ import (
 	"final-account-hub/database"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 func AddAccount(c *gin.Context) {
@@ -20,7 +21,11 @@ func AddAccount(c *gin.Context) {
 		return
 	}
 
-	catID, _ := req.CategoryID.Int64()
+	catID, err := req.CategoryID.Int64()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid category_id"})
+		return
+	}
 	account := database.Account{CategoryID: uint(catID), Data: req.Data}
 	if err := database.DB.Create(&account).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -28,6 +33,30 @@ func AddAccount(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, account)
+}
+
+func AddAccountsBulk(c *gin.Context) {
+	var req struct {
+		CategoryID uint     `json:"category_id" binding:"required"`
+		Data       []string `json:"data" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	accounts := make([]database.Account, len(req.Data))
+	for i, d := range req.Data {
+		accounts[i] = database.Account{CategoryID: req.CategoryID, Data: d}
+	}
+
+	if err := database.DB.Create(&accounts).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"count": len(accounts)})
 }
 
 func GetAccounts(c *gin.Context) {
@@ -49,18 +78,24 @@ func FetchAccounts(c *gin.Context) {
 	}
 
 	var accounts []database.Account
-	database.DB.Where("category_id = ? AND used = ? AND banned = ?", req.CategoryID, false, false).
-		Limit(req.Count).Find(&accounts)
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Raw("SELECT * FROM accounts WHERE category_id = ? AND used = ? AND banned = ? LIMIT ?", req.CategoryID, false, false, req.Count).Scan(&accounts).Error; err != nil {
+			return err
+		}
+		if len(accounts) > 0 {
+			var ids []uint
+			for _, acc := range accounts {
+				ids = append(ids, acc.ID)
+			}
+			return tx.Model(&database.Account{}).Where("id IN ?", ids).Update("used", true).Error
+		}
+		return nil
+	})
 
-	var ids []uint
-	for _, acc := range accounts {
-		ids = append(ids, acc.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
-
-	if len(ids) > 0 {
-		database.DB.Model(&database.Account{}).Where("id IN ?", ids).Update("used", true)
-	}
-
 	c.JSON(http.StatusOK, accounts)
 }
 
@@ -96,14 +131,18 @@ func DeleteAccounts(c *gin.Context) {
 	}
 
 	query := database.DB.Where("category_id = ?", req.CategoryID)
-	if req.Used {
+	if req.Used && req.Banned {
+		query = query.Where("used = ? OR banned = ?", true, true)
+	} else if req.Used {
 		query = query.Where("used = ?", true)
-	}
-	if req.Banned {
-		query = query.Or("banned = ?", true)
+	} else if req.Banned {
+		query = query.Where("banned = ?", true)
 	}
 
-	query.Delete(&database.Account{})
+	if err := query.Delete(&database.Account{}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
 }
 

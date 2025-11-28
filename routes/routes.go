@@ -17,6 +17,7 @@ func SetupRoutes(r *gin.Engine) {
 		api.DELETE("/categories/:id", handlers.DeleteCategory)
 
 		api.POST("/accounts", handlers.AddAccount)
+		api.POST("/accounts/bulk", handlers.AddAccountsBulk)
 		api.GET("/accounts/:category_id", handlers.GetAccounts)
 		api.POST("/accounts/fetch", handlers.FetchAccounts)
 		api.PUT("/accounts/update", handlers.UpdateAccounts)

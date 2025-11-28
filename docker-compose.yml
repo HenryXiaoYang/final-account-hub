@@ -1,0 +1,11 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - PASSKEY=${PASSKEY}
+      - PORT=8080
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

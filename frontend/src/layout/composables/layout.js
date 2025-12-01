@@ -1,7 +1,10 @@
 import { computed, reactive } from 'vue'
 
+const savedTheme = localStorage.getItem('darkTheme') === 'true'
+if (savedTheme) document.documentElement.classList.add('app-dark')
+
 const layoutConfig = reactive({
-    darkTheme: false,
+    darkTheme: savedTheme,
     menuMode: 'static'
 })
 
@@ -16,6 +19,7 @@ export function useLayout() {
     const toggleDarkMode = () => {
         layoutConfig.darkTheme = !layoutConfig.darkTheme
         document.documentElement.classList.toggle('app-dark')
+        localStorage.setItem('darkTheme', layoutConfig.darkTheme)
     }
 
     const toggleMenu = () => {

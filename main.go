@@ -6,6 +6,7 @@ import (
 
 	"final-account-hub/database"
 	"final-account-hub/routes"
+	"final-account-hub/validator"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -15,6 +16,7 @@ import (
 func main() {
 	godotenv.Load()
 	database.InitDB()
+	validator.StartScheduler()
 
 	r := gin.Default()
 	r.Use(cors.Default())

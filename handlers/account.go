@@ -26,6 +26,11 @@ func AddAccount(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid category_id"})
 		return
 	}
+	var existing database.Account
+	if database.DB.Where("category_id = ? AND data = ?", catID, req.Data).First(&existing).Error == nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "account already exists"})
+		return
+	}
 	account := database.Account{CategoryID: uint(catID), Data: req.Data}
 	if err := database.DB.Create(&account).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -46,17 +51,29 @@ func AddAccountsBulk(c *gin.Context) {
 		return
 	}
 
-	accounts := make([]database.Account, len(req.Data))
-	for i, d := range req.Data {
-		accounts[i] = database.Account{CategoryID: req.CategoryID, Data: d}
+	var existingData []string
+	database.DB.Model(&database.Account{}).Where("category_id = ? AND data IN ?", req.CategoryID, req.Data).Pluck("data", &existingData)
+	existingSet := make(map[string]bool)
+	for _, d := range existingData {
+		existingSet[d] = true
 	}
 
-	if err := database.DB.Create(&accounts).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+	var accounts []database.Account
+	for _, d := range req.Data {
+		if !existingSet[d] {
+			accounts = append(accounts, database.Account{CategoryID: req.CategoryID, Data: d})
+			existingSet[d] = true // prevent duplicates within request
+		}
 	}
 
-	c.JSON(http.StatusCreated, gin.H{"count": len(accounts)})
+	if len(accounts) > 0 {
+		if err := database.DB.Create(&accounts).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"count": len(accounts), "skipped": len(req.Data) - len(accounts)})
 }
 
 func GetAccounts(c *gin.Context) {
@@ -144,6 +161,21 @@ func DeleteAccounts(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+}
+
+func DeleteAccountsByIds(c *gin.Context) {
+	var req struct {
+		IDs []uint `json:"ids" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := database.DB.Delete(&database.Account{}, req.IDs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "deleted", "count": len(req.IDs)})
 }
 
 func GetAccountStats(c *gin.Context) {

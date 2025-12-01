@@ -2,6 +2,7 @@ package database
 
 import (
 	"log"
+	"os"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -10,11 +11,12 @@ import (
 var DB *gorm.DB
 
 func InitDB() {
+	os.MkdirAll("./data", 0755)
 	var err error
-	DB, err = gorm.Open(sqlite.Open("accounts.db"), &gorm.Config{})
+	DB, err = gorm.Open(sqlite.Open("./data/accounts.db"), &gorm.Config{})
 	if err != nil {
 		log.Fatal("Failed to connect to database:", err)
 	}
 
-	DB.AutoMigrate(&Category{}, &Account{})
+	DB.AutoMigrate(&Category{}, &Account{}, &ValidationRun{})
 }

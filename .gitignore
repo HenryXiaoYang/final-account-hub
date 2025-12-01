@@ -164,6 +164,6 @@ test/
 # Go workspace file
 go.work
 
-accounts.db
+data/
 .idea
 .claude

@@ -39,5 +39,7 @@ export default {
   deleteAccounts: (category_id, used, banned) => api.delete('/accounts', { data: { category_id, used, banned } }),
   deleteAccountsByIds: (ids) => api.delete('/accounts/by-ids', { data: { ids } }),
   getAccountStats: (category_id) => api.get(`/accounts/${category_id}/stats`),
-  getGlobalStats: () => api.get('/stats')
+  getGlobalStats: () => api.get('/stats'),
+  getAPICallHistory: (categoryId) => api.get(`/categories/${categoryId}/history`),
+  updateHistoryLimit: (categoryId, history_limit) => api.put(`/categories/${categoryId}/history-limit`, { history_limit })
 }

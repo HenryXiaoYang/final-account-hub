@@ -93,7 +93,7 @@
                     v-model:value="validationScript"
                     language="python"
                     :theme="isDarkTheme ? 'vs-dark' : 'vs'"
-                    :options="{ minimap: { enabled: false }, fontSize: 14, scrollBeyondLastLine: false }"
+                    :options="{ minimap: { enabled: false }, fontSize: 14, scrollBeyondLastLine: false, quickSuggestions: true, suggestOnTriggerCharacters: true }"
                     class="w-full mb-3 border rounded-lg overflow-hidden"
                     style="height: 300px"
                   />
@@ -192,7 +192,7 @@
 
             <!-- API Tab -->
             <TabPanel value="api">
-              <Card>
+              <Card class="mb-4">
                 <template #title>API Examples</template>
                 <template #content>
                   <div class="flex flex-col gap-3">
@@ -218,6 +218,45 @@
   -d '{"ids": [ACCOUNT_ID], "banned": true}'</code></pre>
                     </div>
                   </div>
+                </template>
+              </Card>
+              <Card>
+                <template #title>
+                  <div class="flex items-center justify-between">
+                    <span>API Call History</span>
+                    <div class="flex items-center gap-2">
+                      <Button icon="pi pi-refresh" text @click="loadAPIHistory" />
+                    </div>
+                  </div>
+                </template>
+                <template #content>
+                  <div class="flex items-center gap-4 mb-3">
+                    <div class="flex items-center gap-2">
+                      <label class="text-sm">History Limit:</label>
+                      <InputNumber v-model="historyLimit" :min="1" :max="10000" :showButtons="false" inputClass="w-24" />
+                    </div>
+                    <Button label="Save" icon="pi pi-save" outlined size="small" @click="saveHistoryLimit" />
+                  </div>
+                  <DataTable :value="apiHistory" stripedRows paginator :rows="10" :rowsPerPageOptions="[10, 25, 50]">
+                    <Column field="created_at" header="Time" style="width: 180px">
+                      <template #body="{ data }">{{ new Date(data.created_at).toLocaleString() }}</template>
+                    </Column>
+                    <Column field="method" header="Method" style="width: 80px">
+                      <template #body="{ data }"><Tag :value="data.method" /></template>
+                    </Column>
+                    <Column field="endpoint" header="Endpoint" />
+                    <Column field="status_code" header="Status" style="width: 80px">
+                      <template #body="{ data }">
+                        <Tag :value="data.status_code" :severity="data.status_code === 200 ? 'success' : 'danger'" />
+                      </template>
+                    </Column>
+                    <Column field="request" header="Request">
+                      <template #body="{ data }"><code class="text-xs">{{ data.request }}</code></template>
+                    </Column>
+                    <Column field="request_ip" header="Request IP">
+                      <template #body="{ data }"><code class="text-xs">{{ data.request_ip }}</code></template>
+                    </Column>
+                  </DataTable>
                 </template>
               </Card>
             </TabPanel>
@@ -375,6 +414,8 @@ const packageLoading = ref(false)
 const selectedPackages = ref([])
 const chartData = ref({})
 const globalStats = ref({ categories: 0, accounts: { total: 0, available: 0, used: 0, banned: 0 }, chart: [] })
+const apiHistory = ref([])
+const historyLimit = ref(1000)
 const globalChartData = computed(() => buildChartData(globalStats.value.chart || {}))
 const { isDarkTheme } = useLayout()
 const chartOptions = computed(() => {
@@ -412,6 +453,8 @@ const loadAccounts = async () => {
     return False, False`
   validationConcurrency.value = cat?.validation_concurrency || 1
   validationCron.value = cat?.validation_cron || '0 0 * * *'
+  historyLimit.value = cat?.history_limit || 1000
+  loadAPIHistory()
   const runsRes = await api.getValidationRuns(categoryId.value)
   validationRuns.value = runsRes.data || []
   startRunsPolling()
@@ -652,5 +695,25 @@ const uploadRequirements = async (e) => {
   }
   packageLoading.value = false
   e.target.value = ''
+}
+
+const loadAPIHistory = async () => {
+  if (!categoryId.value) return
+  try {
+    const res = await api.getAPICallHistory(categoryId.value)
+    apiHistory.value = res.data || []
+  } catch (e) {
+    apiHistory.value = []
+  }
+}
+
+const saveHistoryLimit = async () => {
+  if (!categoryId.value) return
+  try {
+    await api.updateHistoryLimit(categoryId.value, historyLimit.value)
+    toast.add({ severity: 'success', summary: 'Saved', detail: 'History limit updated', life: 3000 })
+  } catch (e) {
+    toast.add({ severity: 'error', summary: 'Error', detail: e.message, life: 3000 })
+  }
 }
 </script>

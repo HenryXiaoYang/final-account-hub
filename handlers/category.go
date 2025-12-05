@@ -1,17 +1,22 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
+	"time"
 
 	"final-account-hub/database"
 	"final-account-hub/validator"
 
 	"github.com/gin-gonic/gin"
 )
+
+var validPackageName = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
 
 func CreateCategory(c *gin.Context) {
 	var req struct {
@@ -134,12 +139,15 @@ print(banned)
 	tmpFile.WriteString(script)
 	tmpFile.Close()
 
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	venvPython := getVenvPath(id) + "/bin/python"
 	var cmd *exec.Cmd
 	if _, err := os.Stat(venvPython); err == nil {
-		cmd = exec.Command(venvPython, tmpFile.Name())
+		cmd = exec.CommandContext(ctx, venvPython, tmpFile.Name())
 	} else {
-		cmd = exec.Command("uv", "run", "--isolated", "--no-project", tmpFile.Name())
+		cmd = exec.CommandContext(ctx, "uv", "run", "--isolated", "--no-project", tmpFile.Name())
 	}
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -220,6 +228,10 @@ func InstallUVPackage(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if !validPackageName.MatchString(req.Package) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid package name"})
+		return
+	}
 	if err := ensureVenv(id); err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "output": err.Error()})
 		return
@@ -242,6 +254,10 @@ func UninstallUVPackage(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if !validPackageName.MatchString(req.Package) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid package name"})
+		return
+	}
 	cmd := exec.Command("uv", "pip", "uninstall", "--python", getVenvPath(id)+"/bin/python", req.Package)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -262,9 +278,16 @@ func InstallRequirements(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"success": false, "output": err.Error()})
 		return
 	}
-	tmpFile, _ := os.CreateTemp("", "requirements-*.txt")
+	tmpFile, err := os.CreateTemp("", "requirements-*.txt")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "output": err.Error()})
+		return
+	}
 	defer os.Remove(tmpFile.Name())
-	c.SaveUploadedFile(file, tmpFile.Name())
+	if err := c.SaveUploadedFile(file, tmpFile.Name()); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "output": err.Error()})
+		return
+	}
 	cmd := exec.Command("uv", "pip", "install", "--python", getVenvPath(id)+"/bin/python", "-r", tmpFile.Name())
 	output, err := cmd.CombinedOutput()
 	if err != nil {

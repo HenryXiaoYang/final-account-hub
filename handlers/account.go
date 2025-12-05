@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"final-account-hub/database"
@@ -94,7 +95,7 @@ func FetchAccounts(c *gin.Context) {
 		return
 	}
 
-	var accounts []database.Account
+	accounts := []database.Account{}
 	err := database.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Raw("SELECT * FROM accounts WHERE category_id = ? AND used = ? AND banned = ? LIMIT ?", req.CategoryID, false, false, req.Count).Scan(&accounts).Error; err != nil {
 			return err
@@ -111,8 +112,10 @@ func FetchAccounts(c *gin.Context) {
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		go RecordAPICall(req.CategoryID, "/api/accounts/fetch", "POST", fmt.Sprintf(`{"category_id":%d,"count":%d}`, req.CategoryID, req.Count), c.ClientIP(), 500)
 		return
 	}
+	go RecordAPICall(req.CategoryID, "/api/accounts/fetch", "POST", fmt.Sprintf(`{"category_id":%d,"count":%d}`, req.CategoryID, req.Count), c.ClientIP(), 200)
 	c.JSON(http.StatusOK, accounts)
 }
 

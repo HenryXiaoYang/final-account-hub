@@ -6,6 +6,14 @@ services:
     environment:
       - PASSKEY=${PASSKEY}
       - PORT=8080
+      - GIN_MODE=${GIN_MODE:-release}
+      - DB_TYPE=${DB_TYPE:-sqlite}
+      - DATABASE_URL=${DATABASE_URL:-}
+      - RATE_LIMIT_MAX_ATTEMPTS=${RATE_LIMIT_MAX_ATTEMPTS:-5}
+      - RATE_LIMIT_BLOCK_MINUTES=${RATE_LIMIT_BLOCK_MINUTES:-15}
+      - DB_MAX_IDLE_CONNS=${DB_MAX_IDLE_CONNS:-10}
+      - DB_MAX_OPEN_CONNS=${DB_MAX_OPEN_CONNS:-100}
+      - DB_CONN_MAX_LIFETIME_MINUTES=${DB_CONN_MAX_LIFETIME_MINUTES:-60}
     volumes:
       - ./data:/app/data
     restart: unless-stopped

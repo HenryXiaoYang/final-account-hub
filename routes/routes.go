@@ -8,6 +8,8 @@ import (
 )
 
 func SetupRoutes(r *gin.Engine) {
+	r.GET("/health", handlers.HealthCheck)
+
 	api := r.Group("/api")
 	api.Use(middleware.AuthMiddleware())
 	{
@@ -35,5 +37,8 @@ func SetupRoutes(r *gin.Engine) {
 		api.DELETE("/accounts/by-ids", handlers.DeleteAccountsByIds)
 		api.GET("/accounts/:category_id/stats", handlers.GetAccountStats)
 		api.GET("/stats", handlers.GetGlobalStats)
+
+		api.GET("/categories/:id/history", handlers.GetAPICallHistory)
+		api.PUT("/categories/:id/history-limit", handlers.UpdateHistoryLimit)
 	}
 }

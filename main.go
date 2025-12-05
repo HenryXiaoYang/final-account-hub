@@ -1,10 +1,15 @@
 package main
 
 import (
-	"log"
+	"context"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"final-account-hub/database"
+	"final-account-hub/logger"
 	"final-account-hub/routes"
 	"final-account-hub/validator"
 
@@ -15,11 +20,24 @@ import (
 
 func main() {
 	godotenv.Load()
+	if mode := os.Getenv("GIN_MODE"); mode != "" {
+		gin.SetMode(mode)
+	}
+	logger.Init()
 	database.InitDB()
 	validator.StartScheduler()
 
-	r := gin.Default()
+	r := gin.New()
+	r.Use(logger.GinLogger(), gin.Recovery())
 	r.Use(cors.Default())
+	r.Use(func(c *gin.Context) {
+		c.Header("X-Frame-Options", "DENY")
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("X-XSS-Protection", "1; mode=block")
+		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
+		c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'")
+		c.Next()
+	})
 
 	routes.SetupRoutes(r)
 
@@ -33,6 +51,26 @@ func main() {
 		port = "8080"
 	}
 
-	log.Printf("Server starting on port %s", port)
-	r.Run(":" + port)
+	srv := &http.Server{Addr: ":" + port, Handler: r}
+
+	go func() {
+		logger.Info.Printf("Server starting on port %s", port)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error.Fatal("Server error:", err)
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	logger.Info.Println("Shutting down server...")
+	validator.StopScheduler()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		logger.Error.Fatal("Server forced to shutdown:", err)
+	}
+	logger.Info.Println("Server exited")
 }

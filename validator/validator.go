@@ -1,8 +1,8 @@
 package validator
 
 import (
+	"context"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"final-account-hub/database"
+	"final-account-hub/logger"
 
 	"github.com/robfig/cron/v3"
 )
@@ -73,18 +74,18 @@ func addJobForCategory(cat database.Category) {
 		validateCategory(c)
 	})
 	if err != nil {
-		log.Printf("Failed to add cron job for category %s: %v", cat.Name, err)
+		logger.Error.Printf("Failed to add cron job for category %s: %v", cat.Name, err)
 		return
 	}
 	categoryJobs[cat.ID] = entryID
 }
 
 func validateCategory(cat database.Category) {
-	log.Printf("Starting validation for category %s (ID: %d)", cat.Name, cat.ID)
+	logger.Info.Printf("Starting validation for category %s (ID: %d)", cat.Name, cat.ID)
 
 	var accounts []database.Account
 	database.DB.Where("category_id = ? AND used = false AND banned = false", cat.ID).Find(&accounts)
-	log.Printf("Found %d accounts to validate", len(accounts))
+	logger.Info.Printf("Found %d accounts to validate", len(accounts))
 
 	// Create run record
 	run := database.ValidationRun{
@@ -94,10 +95,10 @@ func validateCategory(cat database.Category) {
 		StartedAt:  time.Now(),
 	}
 	if err := database.DB.Create(&run).Error; err != nil {
-		log.Printf("Failed to create run record: %v", err)
+		logger.Error.Printf("Failed to create run record: %v", err)
 		return
 	}
-	log.Printf("Created run record ID: %d", run.ID)
+	logger.Info.Printf("Created run record ID: %d", run.ID)
 
 	concurrency := cat.ValidationConcurrency
 	if concurrency < 1 {
@@ -153,12 +154,15 @@ print(banned)
 			tmpFile.WriteString(script)
 			tmpFile.Close()
 
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+
 			venvPython := fmt.Sprintf("./data/venvs/%d/bin/python", cat.ID)
 			var cmd *exec.Cmd
 			if _, err := os.Stat(venvPython); err == nil {
-				cmd = exec.Command(venvPython, tmpPath)
+				cmd = exec.CommandContext(ctx, venvPython, tmpPath)
 			} else {
-				cmd = exec.Command("uv", "run", "--isolated", "--no-project", tmpPath)
+				cmd = exec.CommandContext(ctx, "uv", "run", "--isolated", "--no-project", tmpPath)
 			}
 			output, err := cmd.CombinedOutput()
 			outputStr := strings.TrimSpace(string(output))
@@ -200,7 +204,7 @@ print(banned)
 		"finished_at":  now,
 	})
 	database.DB.Model(&cat).Update("last_validated_at", now)
-	log.Printf("Validated category %s: %d accounts, %d banned", cat.Name, len(accounts), bannedCount)
+	logger.Info.Printf("Validated category %s: %d accounts, %d banned", cat.Name, len(accounts), bannedCount)
 }
 
 func RunValidationNow(categoryID uint) error {
@@ -213,4 +217,10 @@ func RunValidationNow(categoryID uint) error {
 	}
 	go validateCategory(cat)
 	return nil
+}
+
+func StopScheduler() {
+	if cronScheduler != nil {
+		cronScheduler.Stop()
+	}
 }

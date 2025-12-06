@@ -59,7 +59,11 @@ func createPostgresDB(dsn string) {
 	}
 	dbPart := parts[len(parts)-1]
 	dbName := strings.Split(dbPart, "?")[0]
-	baseDSN := strings.Join(parts[:len(parts)-1], "/") + "/postgres?" + strings.SplitN(dbPart, "?", 2)[1]
+	queryParams := ""
+	if idx := strings.Index(dbPart, "?"); idx != -1 {
+		queryParams = dbPart[idx:]
+	}
+	baseDSN := strings.Join(parts[:len(parts)-1], "/") + "/postgres" + queryParams
 
 	conn, err := sql.Open("pgx", baseDSN)
 	if err != nil {

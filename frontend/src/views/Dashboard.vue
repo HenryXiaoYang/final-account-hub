@@ -540,16 +540,17 @@ const onTabChange = async (tab) => {
 }
 
 const pollValidationRuns = async () => {
-  if (!categoryId.value) return
+  if (!categoryId.value || activeTab.value !== 'validation') {
+    runsPollingInterval = null
+    return
+  }
   try {
     const runsRes = await api.getValidationRuns(categoryId.value)
     validationRuns.value = runsRes.data || []
-    console.log('Polling runs:', validationRuns.value)
     if (validationRuns.value.some(r => r.status === 'running')) {
       setTimeout(pollValidationRuns, 3000)
-    } else if (runsPollingInterval) {
-      runsPollingInterval = false
-      await loadAccounts()
+    } else {
+      runsPollingInterval = null
     }
   } catch (e) {
     console.error('Poll error:', e)

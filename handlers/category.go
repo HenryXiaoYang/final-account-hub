@@ -197,8 +197,9 @@ func getVenvPath(categoryID string) string {
 
 func ensureVenv(categoryID string) error {
 	venvPath := getVenvPath(categoryID)
-	if _, err := os.Stat(venvPath); os.IsNotExist(err) {
-		cmd := exec.Command("uv", "venv", venvPath)
+	pythonPath := venvPath + "/bin/python"
+	if _, err := os.Stat(pythonPath); os.IsNotExist(err) {
+		cmd := exec.Command("uv", "venv", venvPath, "--python", "3.12")
 		return cmd.Run()
 	}
 	return nil

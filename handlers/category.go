@@ -199,6 +199,9 @@ func ensureVenv(categoryID string) error {
 	venvPath := getVenvPath(categoryID)
 	pythonPath := venvPath + "/bin/python"
 	if _, err := os.Stat(pythonPath); os.IsNotExist(err) {
+		if err := os.MkdirAll("./data/venvs", 0755); err != nil {
+			return fmt.Errorf("failed to create venvs directory: %s", err)
+		}
 		cmd := exec.Command("uv", "venv", venvPath, "--python", "3.12")
 		output, err := cmd.CombinedOutput()
 		if err != nil {

@@ -200,7 +200,10 @@ func ensureVenv(categoryID string) error {
 	pythonPath := venvPath + "/bin/python"
 	if _, err := os.Stat(pythonPath); os.IsNotExist(err) {
 		cmd := exec.Command("uv", "venv", venvPath, "--python", "3.12")
-		return cmd.Run()
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("venv creation failed: %s", string(output))
+		}
 	}
 	return nil
 }

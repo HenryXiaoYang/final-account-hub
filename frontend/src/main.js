@@ -3,6 +3,10 @@ import App from './App.vue'
 import router from './router'
 import i18n from './i18n'
 import PrimeVue from 'primevue/config'
+import { loader } from '@guolao/vue-monaco-editor'
+import * as monaco from 'monaco-editor'
+
+loader.config({ monaco })
 import Aura from '@primevue/themes/aura'
 import { definePreset } from '@primevue/themes'
 

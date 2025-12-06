@@ -71,7 +71,8 @@ export default {
   validation: {
     title: 'Validation',
     scriptTitle: 'Validation Script (Python)',
-    scriptDesc: 'Define a validate(account: str) function that returns (used: bool, banned: bool). Only non-banned accounts are validated.',
+    scriptDesc: 'Define a validate(account: str) function that returns (used: bool, banned: bool). Only non-banned accounts are validated. You can use AI to generate the script with this prompt:',
+    scriptPrompt: 'Write a Python function validate(account: str) -> tuple[bool, bool] that returns (used, banned). Account format: [YOUR_FORMAT]. Validation logic: [YOUR_LOGIC].',
     cron: 'Cron',
     concurrency: 'Concurrency',
     runNow: 'Run Now',

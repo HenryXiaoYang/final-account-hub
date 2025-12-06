@@ -71,7 +71,8 @@ export default {
   validation: {
     title: '验证',
     scriptTitle: '验证脚本 (Python)',
-    scriptDesc: '定义 validate(account: str) 函数，返回 (used: bool, banned: bool)。仅验证未封禁的账号。',
+    scriptDesc: '定义 validate(account: str) 函数，返回 (used: bool, banned: bool)。仅验证未封禁的账号。可使用 AI 生成脚本，提示词：',
+    scriptPrompt: '编写 Python 函数 validate(account: str) -> tuple[bool, bool]，返回 (used, banned)。账号格式：[你的格式]。验证逻辑：[你的逻辑]。',
     cron: '定时任务',
     concurrency: '并发数',
     runNow: '立即运行',

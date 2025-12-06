@@ -35,13 +35,14 @@ func main() {
 		c.Header("X-Content-Type-Options", "nosniff")
 		c.Header("X-XSS-Protection", "1; mode=block")
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
-		c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'")
+		c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; font-src 'self' data:")
 		c.Next()
 	})
 
 	routes.SetupRoutes(r)
 
 	r.Static("/assets", "./frontend/dist/assets")
+	r.Static("/monacoeditorwork", "./frontend/dist/monacoeditorwork")
 	r.NoRoute(func(c *gin.Context) {
 		c.File("./frontend/dist/index.html")
 	})

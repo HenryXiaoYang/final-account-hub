@@ -88,7 +88,7 @@
               <Card class="mb-4">
                 <template #title>{{ t('validation.scriptTitle') }}</template>
                 <template #content>
-                  <p class="text-sm text-surface-500 mb-3">{{ t('validation.scriptDesc') }}</p>
+                  <p class="text-sm text-surface-500 mb-3">{{ t('validation.scriptDesc') }}<code class="text-xs bg-surface-100 dark:bg-surface-800 px-2 py-1 rounded ml-1">{{ t('validation.scriptPrompt') }}</code></p>
                   <VueMonacoEditor
                     v-model:value="validationScript"
                     language="python"

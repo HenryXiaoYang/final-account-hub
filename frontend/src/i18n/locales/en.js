@@ -116,6 +116,8 @@ export default {
     endpoint: 'Endpoint',
     request: 'Request',
     requestIp: 'Request IP',
-    historySaved: 'History limit updated'
+    historySaved: 'History limit updated',
+    getAccounts: 'Get Accounts',
+    deleteAccounts: 'Delete Accounts'
   }
 }

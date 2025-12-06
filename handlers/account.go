@@ -79,9 +79,22 @@ func AddAccountsBulk(c *gin.Context) {
 
 func GetAccounts(c *gin.Context) {
 	categoryID := c.Param("category_id")
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 1000 {
+		limit = 100
+	}
+	offset := (page - 1) * limit
+
+	var total int64
+	database.DB.Model(&database.Account{}).Where("category_id = ?", categoryID).Count(&total)
+
 	var accounts []database.Account
-	database.DB.Where("category_id = ?", categoryID).Find(&accounts)
-	c.JSON(http.StatusOK, accounts)
+	database.DB.Where("category_id = ?", categoryID).Offset(offset).Limit(limit).Find(&accounts)
+	c.JSON(http.StatusOK, gin.H{"data": accounts, "total": total, "page": page, "limit": limit})
 }
 
 func FetchAccounts(c *gin.Context) {
@@ -213,7 +226,13 @@ func GetAccountStats(c *gin.Context) {
 		Group("DATE(updated_at)").
 		Scan(&banned)
 
-	c.JSON(http.StatusOK, gin.H{"added": added, "used": used, "banned": banned})
+	var totalCount, availableCount, usedCount, bannedCount int64
+	database.DB.Model(&database.Account{}).Where("category_id = ?", categoryID).Count(&totalCount)
+	database.DB.Model(&database.Account{}).Where("category_id = ? AND used = ? AND banned = ?", categoryID, false, false).Count(&availableCount)
+	database.DB.Model(&database.Account{}).Where("category_id = ? AND used = ?", categoryID, true).Count(&usedCount)
+	database.DB.Model(&database.Account{}).Where("category_id = ? AND banned = ?", categoryID, true).Count(&bannedCount)
+
+	c.JSON(http.StatusOK, gin.H{"added": added, "used": used, "banned": banned, "counts": gin.H{"total": totalCount, "available": availableCount, "used": usedCount, "banned": bannedCount}})
 }
 
 func GetGlobalStats(c *gin.Context) {

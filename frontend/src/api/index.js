@@ -33,7 +33,7 @@ export default {
 
   addAccount: (category_id, data) => api.post('/accounts', { category_id: Number(category_id), data: String(data) }),
   addAccountsBulk: (category_id, data) => api.post('/accounts/bulk', { category_id: Number(category_id), data }),
-  getAccounts: (category_id) => api.get(`/accounts/${category_id}`),
+  getAccounts: (category_id, page = 1, limit = 100) => api.get(`/accounts/${category_id}?page=${page}&limit=${limit}`),
   fetchAccounts: (category_id, count) => api.post('/accounts/fetch', { category_id, count }),
   updateAccounts: (ids, status) => api.put('/accounts/update', { ids: Array.isArray(ids) ? [...ids] : [ids], ...status }),
   deleteAccounts: (category_id, used, banned) => api.delete('/accounts', { data: { category_id, used, banned } }),

@@ -116,6 +116,8 @@ export default {
     endpoint: '端点',
     request: '请求',
     requestIp: '请求 IP',
-    historySaved: '历史记录限制已更新'
+    historySaved: '历史记录限制已更新',
+    getAccounts: '获取账号列表',
+    deleteAccounts: '删除账号'
   }
 }

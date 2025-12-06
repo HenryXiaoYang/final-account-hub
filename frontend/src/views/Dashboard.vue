@@ -8,7 +8,7 @@
             {{ categoryName }}
           </div>
           <div class="flex gap-2 flex-wrap">
-            <Tag :value="`${t('dashboard.total')}: ${accounts.length}`" severity="contrast" />
+            <Tag :value="`${t('dashboard.total')}: ${totalRecords}`" severity="contrast" />
             <Tag :value="`${t('dashboard.available')}: ${availableCount}`" severity="success" />
             <Tag :value="`${t('dashboard.used')}: ${usedCount}`" severity="warn" />
             <Tag :value="`${t('dashboard.banned')}: ${bannedCount}`" severity="danger" />
@@ -54,7 +54,7 @@
                 </template>
               </Toolbar>
 
-              <DataTable v-model:selection="selectedAccountsObj" :value="accounts" dataKey="id" stripedRows paginator :rows="10" :rowsPerPageOptions="[10, 25, 50, 100]">
+              <DataTable v-model:selection="selectedAccountsObj" :value="accounts" :loading="loading" dataKey="id" stripedRows lazy paginator :rows="rowsPerPage" :totalRecords="totalRecords" :rowsPerPageOptions="[10, 25, 50, 100]" @page="onPage">
                 <Column selectionMode="multiple" style="width: 3rem" />
                 <Column field="id" :header="t('accounts.id')" style="width: 80px" />
                 <Column field="data" :header="t('accounts.data')" style="max-width: 400px">
@@ -353,6 +353,16 @@
   -H "Content-Type: application/json" \
   -d '{"ids": [1], "banned": true}'</code></pre>
               </div>
+              <div>
+                <div class="font-semibold mb-1">{{ t('api.getAccounts') }}</div>
+                <pre class="text-xs bg-surface-100 dark:bg-surface-800 p-3 rounded overflow-x-auto m-0"><code>curl -X GET {{ baseUrl }}/api/accounts/1 \
+  -H "X-Passkey: YOUR_PASSKEY"</code></pre>
+              </div>
+              <div>
+                <div class="font-semibold mb-1">{{ t('api.deleteAccounts') }}</div>
+                <pre class="text-xs bg-surface-100 dark:bg-surface-800 p-3 rounded overflow-x-auto m-0"><code>curl -X DELETE "{{ baseUrl }}/api/accounts?category_id=1&used=true" \
+  -H "X-Passkey: YOUR_PASSKEY"</code></pre>
+              </div>
             </div>
           </template>
         </Card>
@@ -385,7 +395,8 @@ import Chart from 'primevue/chart'
 import InputNumber from 'primevue/inputnumber'
 import InputText from 'primevue/inputtext'
 import Tabs from 'primevue/tabs'
-import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
+import { defineAsyncComponent } from 'vue'
+const VueMonacoEditor = defineAsyncComponent(() => import('@guolao/vue-monaco-editor').then(m => m.VueMonacoEditor))
 import TabList from 'primevue/tablist'
 import Tab from 'primevue/tab'
 import TabPanels from 'primevue/tabpanels'
@@ -399,6 +410,7 @@ const categoryId = computed(() => route.params.categoryId)
 const baseUrl = computed(() => window.location.origin)
 const categoryName = ref('')
 const accounts = ref([])
+const loading = ref(false)
 const newAccountData = ref('')
 const selectedAccountsObj = ref([])
 const validationScript = ref('')
@@ -436,18 +448,25 @@ const chartOptions = computed(() => {
 })
 
 const selectedAccounts = computed(() => selectedAccountsObj.value.map(a => a.id))
-const availableCount = computed(() => accounts.value.filter(a => !a.used && !a.banned).length)
-const usedCount = computed(() => accounts.value.filter(a => a.used).length)
-const bannedCount = computed(() => accounts.value.filter(a => a.banned).length)
+const totalRecords = ref(0)
+const currentPage = ref(1)
+const rowsPerPage = ref(10)
+const availableCount = ref(0)
+const usedCount = ref(0)
+const bannedCount = ref(0)
 
-const loadAccounts = async () => {
+const loadAccounts = async (page = 1, limit = rowsPerPage.value) => {
   if (!categoryId.value) {
     const res = await api.getGlobalStats()
     globalStats.value = res.data
     return
   }
-  const res = await api.getAccounts(categoryId.value)
-  accounts.value = res.data
+  loading.value = true
+  currentPage.value = page
+  const res = await api.getAccounts(categoryId.value, page, limit)
+  accounts.value = res.data.data
+  totalRecords.value = res.data.total
+  loading.value = false
   const catRes = await api.getCategory(categoryId.value)
   const cat = catRes.data
   categoryName.value = cat?.name || ''
@@ -465,6 +484,11 @@ const loadAccounts = async () => {
   const statsRes = await api.getAccountStats(categoryId.value)
   const stats = statsRes.data || {}
   chartData.value = buildChartData(stats)
+  if (stats.counts) {
+    availableCount.value = stats.counts.available || 0
+    usedCount.value = stats.counts.used || 0
+    bannedCount.value = stats.counts.banned || 0
+  }
 }
 
 const buildChartData = (stats) => {
@@ -513,6 +537,11 @@ const startRunsPolling = () => {
   }
 }
 
+const onPage = (event) => {
+  rowsPerPage.value = event.rows
+  loadAccounts(event.page + 1, event.rows)
+}
+
 const copyData = (text) => {
   navigator.clipboard.writeText(text)
   toast.add({ severity: 'success', summary: t('common.copied'), life: 2000 })
@@ -535,7 +564,8 @@ const addAccount = async () => {
       }
     }
     newAccountData.value = ''
-    await loadAccounts()
+    await loadAccounts(currentPage.value, rowsPerPage.value)
+    await refreshCounts()
   } catch (e) {
     if (e.response?.status === 409) {
       toast.add({ severity: 'error', summary: t('accounts.duplicate'), detail: t('accounts.accountExists'), life: 3000 })
@@ -545,11 +575,23 @@ const addAccount = async () => {
   }
 }
 
+const refreshCounts = async () => {
+  const statsRes = await api.getAccountStats(categoryId.value)
+  const stats = statsRes.data || {}
+  if (stats.counts) {
+    totalRecords.value = stats.counts.total || 0
+    availableCount.value = stats.counts.available || 0
+    usedCount.value = stats.counts.used || 0
+    bannedCount.value = stats.counts.banned || 0
+  }
+}
+
 const updateAccounts = async (ids, status) => {
   try {
     await api.updateAccounts(ids, status)
     selectedAccountsObj.value = []
-    await loadAccounts()
+    await loadAccounts(currentPage.value, rowsPerPage.value)
+    await refreshCounts()
   } catch (e) {
     console.error('updateAccounts error:', e)
   }
@@ -567,7 +609,8 @@ const confirmDeleteUsed = () => {
 const deleteUsed = async () => {
   await api.deleteAccounts(categoryId.value, true, false)
   toast.add({ severity: 'success', summary: t('common.success'), detail: t('accounts.usedDeleted'), life: 3000 })
-  await loadAccounts()
+  await loadAccounts(1, rowsPerPage.value)
+  await refreshCounts()
 }
 
 const confirmDeleteBanned = () => {
@@ -592,13 +635,15 @@ const deleteSelected = async () => {
   await api.deleteAccountsByIds(selectedAccounts.value)
   toast.add({ severity: 'success', summary: t('common.success'), detail: t('accounts.selectedDeleted'), life: 3000 })
   selectedAccountsObj.value = []
-  await loadAccounts()
+  await loadAccounts(currentPage.value, rowsPerPage.value)
+  await refreshCounts()
 }
 
 const deleteBanned = async () => {
   await api.deleteAccounts(categoryId.value, false, true)
   toast.add({ severity: 'success', summary: t('common.success'), detail: t('accounts.bannedDeleted'), life: 3000 })
-  await loadAccounts()
+  await loadAccounts(1, rowsPerPage.value)
+  await refreshCounts()
 }
 
 const saveValidationScript = async () => {

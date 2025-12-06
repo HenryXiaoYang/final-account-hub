@@ -13,6 +13,7 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 )
 
 func getEnvInt(key string, def int) int {
@@ -31,13 +32,14 @@ var DB *gorm.DB
 func InitDB() {
 	var err error
 	dbType := os.Getenv("DB_TYPE")
+	gormConfig := &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)}
 	if dbType == "postgres" {
 		dsn := os.Getenv("DATABASE_URL")
 		createPostgresDB(dsn)
-		DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
+		DB, err = gorm.Open(postgres.Open(dsn), gormConfig)
 	} else {
 		os.MkdirAll("./data", 0755)
-		DB, err = gorm.Open(sqlite.Open("./data/accounts.db"), &gorm.Config{})
+		DB, err = gorm.Open(sqlite.Open("./data/accounts.db"), gormConfig)
 	}
 	if err != nil {
 		logger.Error.Fatal("Failed to connect to database:", err)

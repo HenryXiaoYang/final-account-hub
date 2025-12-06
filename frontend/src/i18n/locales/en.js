@@ -16,7 +16,8 @@ export default {
     noData: 'No data',
     actions: 'Actions',
     status: 'Status',
-    copied: 'Copied'
+    copied: 'Copied',
+    loadMore: 'Load More'
   },
   login: {
     title: 'Final Account Hub',

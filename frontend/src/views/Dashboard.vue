@@ -370,7 +370,10 @@
     </Card>
   </div>
   <Dialog v-model:visible="logDialogVisible" :header="t('validation.runLog')" :style="{ width: '80vw', maxWidth: '1000px' }" modal>
-    <pre class="text-xs bg-surface-100 dark:bg-surface-800 p-3 rounded overflow-auto m-0" style="max-height: 70vh">{{ runLog || t('validation.noLog') }}</pre>
+    <div ref="logContainer" class="text-xs bg-surface-100 dark:bg-surface-800 p-3 rounded overflow-auto m-0" style="max-height: 70vh" @scroll="onLogScroll">
+      <div v-if="logLoading" class="text-center py-2">{{ t('common.loading') }}</div>
+      <pre class="m-0 whitespace-pre-wrap">{{ runLog.length ? runLog.join('\n') : t('validation.noLog') }}</pre>
+    </div>
   </Dialog>
 </template>
 
@@ -422,7 +425,12 @@ const testResult = ref(null)
 const testLoading = ref(false)
 let runsPollingInterval = null
 const logDialogVisible = ref(false)
-const runLog = ref('')
+const runLog = ref([])
+const logRunId = ref(null)
+const logOffset = ref(0)
+const logHasMore = ref(false)
+const logLoading = ref(false)
+const logContainer = ref(null)
 const uvPackages = ref([])
 const newPackage = ref('')
 const packageLoading = ref(false)
@@ -607,7 +615,7 @@ const confirmDeleteUsed = () => {
 }
 
 const deleteUsed = async () => {
-  await api.deleteAccounts(categoryId.value, true, false)
+  await api.deleteAccounts(Number(categoryId.value), true, false)
   toast.add({ severity: 'success', summary: t('common.success'), detail: t('accounts.usedDeleted'), life: 3000 })
   await loadAccounts(1, rowsPerPage.value)
   await refreshCounts()
@@ -640,7 +648,7 @@ const deleteSelected = async () => {
 }
 
 const deleteBanned = async () => {
-  await api.deleteAccounts(categoryId.value, false, true)
+  await api.deleteAccounts(Number(categoryId.value), false, true)
   toast.add({ severity: 'success', summary: t('common.success'), detail: t('accounts.bannedDeleted'), life: 3000 })
   await loadAccounts(1, rowsPerPage.value)
   await refreshCounts()
@@ -677,13 +685,34 @@ const testScript = async () => {
 }
 
 const showRunLog = async (runId) => {
+  logRunId.value = runId
+  logOffset.value = 0
+  runLog.value = []
+  logHasMore.value = true
+  logDialogVisible.value = true
+  await loadMoreLog()
+}
+
+const loadMoreLog = async () => {
+  if (logLoading.value || !logRunId.value || !logHasMore.value) return
+  logLoading.value = true
+  const prevHeight = logContainer.value?.scrollHeight || 0
   try {
-    const res = await api.getValidationRunLog(runId)
-    runLog.value = res.data.log || ''
-    logDialogVisible.value = true
+    const res = await api.getValidationRunLog(logRunId.value, logOffset.value)
+    runLog.value = [...res.data.lines, ...runLog.value]
+    logOffset.value += res.data.lines.length
+    logHasMore.value = res.data.has_more
+    setTimeout(() => {
+      if (logContainer.value) logContainer.value.scrollTop = logContainer.value.scrollHeight - prevHeight
+    }, 0)
   } catch (e) {
     toast.add({ severity: 'error', summary: t('common.error'), detail: e.message, life: 3000 })
   }
+  logLoading.value = false
+}
+
+const onLogScroll = () => {
+  if (logContainer.value?.scrollTop < 50 && logHasMore.value) loadMoreLog()
 }
 
 const loadPackages = async () => {

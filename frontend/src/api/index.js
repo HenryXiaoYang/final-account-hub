@@ -21,7 +21,7 @@ export default {
   testValidationScript: (categoryId, script, test_account) => api.post(`/categories/${categoryId}/test-validation`, { script, test_account }),
   getValidationRuns: (id) => api.get(`/categories/${id}/validation-runs`),
   runValidationNow: (id) => api.post(`/categories/${id}/run-validation`),
-  getValidationRunLog: (runId) => api.get(`/validation-runs/${runId}/log`),
+  getValidationRunLog: (runId, offset = 0, limit = 100) => api.get(`/validation-runs/${runId}/log?offset=${offset}&limit=${limit}`),
   getUVPackages: (categoryId) => api.get(`/categories/${categoryId}/packages`),
   installUVPackage: (categoryId, pkg) => api.post(`/categories/${categoryId}/packages/install`, { package: pkg }),
   uninstallUVPackage: (categoryId, pkg) => api.post(`/categories/${categoryId}/packages/uninstall`, { package: pkg }),

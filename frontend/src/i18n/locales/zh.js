@@ -16,7 +16,8 @@ export default {
     noData: '暂无数据',
     actions: '操作',
     status: '状态',
-    copied: '已复制'
+    copied: '已复制',
+    loadMore: '加载更多'
   },
   login: {
     title: '终极账号中心',

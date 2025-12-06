@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -188,7 +189,23 @@ func GetValidationRunLog(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "run not found"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"log": run.Log})
+
+	lines := strings.Split(run.Log, "\n")
+	total := len(lines)
+	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
+
+	end := total
+	start := end - offset - limit
+	if start < 0 {
+		start = 0
+	}
+	end = end - offset
+	if end < 0 {
+		end = 0
+	}
+
+	c.JSON(http.StatusOK, gin.H{"lines": lines[start:end], "total": total, "has_more": start > 0})
 }
 
 func getVenvPath(categoryID string) string {

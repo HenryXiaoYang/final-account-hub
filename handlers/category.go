@@ -182,6 +182,17 @@ func RunValidationNow(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "validation started"})
 }
 
+func StopValidation(c *gin.Context) {
+	id := c.Param("id")
+	var catID uint
+	fmt.Sscanf(id, "%d", &catID)
+	if validator.StopValidation(catID) {
+		c.JSON(http.StatusOK, gin.H{"message": "validation stopped"})
+	} else {
+		c.JSON(http.StatusNotFound, gin.H{"error": "no running validation"})
+	}
+}
+
 func GetValidationRunLog(c *gin.Context) {
 	id := c.Param("run_id")
 	var run database.ValidationRun

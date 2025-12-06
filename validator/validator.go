@@ -19,6 +19,8 @@ import (
 var cronScheduler *cron.Cron
 var categoryJobs = make(map[uint]cron.EntryID)
 var jobsMutex sync.Mutex
+var runningValidations = make(map[uint]context.CancelFunc)
+var runningMutex sync.Mutex
 
 func StartScheduler() {
 	cronScheduler = cron.New()
@@ -81,6 +83,16 @@ func addJobForCategory(cat database.Category) {
 }
 
 func validateCategory(cat database.Category) {
+	ctx, cancel := context.WithCancel(context.Background())
+	runningMutex.Lock()
+	runningValidations[cat.ID] = cancel
+	runningMutex.Unlock()
+	defer func() {
+		runningMutex.Lock()
+		delete(runningValidations, cat.ID)
+		runningMutex.Unlock()
+	}()
+
 	logger.Info.Printf("Starting validation for category %s (ID: %d)", cat.Name, cat.ID)
 
 	var accounts []database.Account
@@ -99,6 +111,7 @@ func validateCategory(cat database.Category) {
 		return
 	}
 	logger.Info.Printf("Created run record ID: %d", run.ID)
+	var stopped bool
 
 	concurrency := cat.ValidationConcurrency
 	if concurrency < 1 {
@@ -125,6 +138,13 @@ func validateCategory(cat database.Category) {
 		workerSlots <- i
 	}
 	for _, acc := range accounts {
+		select {
+		case <-ctx.Done():
+			stopped = true
+			appendLog(fmt.Sprintf("[%s] Validation stopped by user", time.Now().Format("15:04:05")))
+			goto done
+		default:
+		}
 		wg.Add(1)
 		worker := <-workerSlots
 		go func(acc database.Account, worker int) {
@@ -193,13 +213,20 @@ print(banned)
 		}(acc, worker)
 	}
 
+done:
 	wg.Wait()
-	appendLog(fmt.Sprintf("[%s] Completed: %d total, %d banned", time.Now().Format("15:04:05"), len(accounts), bannedCount))
+	now := time.Now()
+	status := "success"
+	if stopped {
+		status = "stopped"
+		appendLog(fmt.Sprintf("[%s] Stopped: %d processed, %d banned", time.Now().Format("15:04:05"), processedCount, bannedCount))
+	} else {
+		appendLog(fmt.Sprintf("[%s] Completed: %d total, %d banned", time.Now().Format("15:04:05"), len(accounts), bannedCount))
+	}
 
 	// Update run record
-	now := time.Now()
 	database.DB.Model(&run).Updates(map[string]interface{}{
-		"status":       "success",
+		"status":       status,
 		"banned_count": int(bannedCount),
 		"finished_at":  now,
 	})
@@ -217,6 +244,16 @@ func RunValidationNow(categoryID uint) error {
 	}
 	go validateCategory(cat)
 	return nil
+}
+
+func StopValidation(categoryID uint) bool {
+	runningMutex.Lock()
+	defer runningMutex.Unlock()
+	if cancel, ok := runningValidations[categoryID]; ok {
+		cancel()
+		return true
+	}
+	return false
 }
 
 func StopScheduler() {

@@ -89,6 +89,7 @@ export default {
     runLog: 'Run Log',
     noLog: 'No log available',
     validationStarted: 'Validation started',
+    validationStopped: 'Validation stopped',
     scriptSaved: 'Validation script saved'
   },
   packages: {

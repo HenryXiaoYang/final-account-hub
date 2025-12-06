@@ -153,9 +153,10 @@
                     <Column field="finished_at" :header="t('validation.finished')">
                       <template #body="{ data }">{{ data.finished_at ? new Date(data.finished_at).toLocaleString() : '-' }}</template>
                     </Column>
-                    <Column :header="t('validation.log')">
+                    <Column :header="t('common.actions')">
                       <template #body="{ data }">
                         <Button icon="pi pi-file" text size="small" @click="showRunLog(data.id)" />
+                        <Button v-if="data.status === 'running'" icon="pi pi-stop" text size="small" severity="danger" @click="stopValidation" />
                       </template>
                     </Column>
                   </DataTable>
@@ -680,6 +681,16 @@ const deleteBanned = async () => {
 const saveValidationScript = async () => {
   await api.updateValidationScript(categoryId.value, validationScript.value, validationConcurrency.value, validationCron.value)
   toast.add({ severity: 'success', summary: t('common.success'), detail: t('validation.scriptSaved'), life: 3000 })
+}
+
+const stopValidation = async () => {
+  try {
+    await api.stopValidation(categoryId.value)
+    toast.add({ severity: 'info', summary: t('common.success'), detail: t('validation.validationStopped'), life: 3000 })
+    setTimeout(pollValidationRuns, 500)
+  } catch (e) {
+    toast.add({ severity: 'error', summary: t('common.error'), detail: e.message, life: 3000 })
+  }
 }
 
 const runValidationNow = async () => {

@@ -89,6 +89,7 @@ export default {
     runLog: '运行日志',
     noLog: '暂无日志',
     validationStarted: '验证已开始',
+    validationStopped: '验证已停止',
     scriptSaved: '验证脚本已保存'
   },
   packages: {

@@ -22,6 +22,7 @@ func SetupRoutes(r *gin.Engine) {
 		api.POST("/categories/:id/test-validation", handlers.TestValidationScript)
 		api.GET("/categories/:id/validation-runs", handlers.GetValidationRuns)
 		api.POST("/categories/:id/run-validation", handlers.RunValidationNow)
+		api.POST("/categories/:id/stop-validation", handlers.StopValidation)
 		api.GET("/validation-runs/:run_id/log", handlers.GetValidationRunLog)
 		api.GET("/categories/:id/packages", handlers.GetUVPackages)
 		api.POST("/categories/:id/packages/install", handlers.InstallUVPackage)

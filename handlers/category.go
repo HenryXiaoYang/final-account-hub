@@ -167,7 +167,7 @@ print(banned)
 func GetValidationRuns(c *gin.Context) {
 	id := c.Param("id")
 	var runs []database.ValidationRun
-	database.DB.Where("category_id = ?", id).Order("started_at desc").Limit(20).Find(&runs)
+	database.DB.Select("id, category_id, status, total_count, processed_count, banned_count, error_message, started_at, finished_at").Where("category_id = ?", id).Order("started_at desc").Limit(20).Find(&runs)
 	c.JSON(http.StatusOK, runs)
 }
 

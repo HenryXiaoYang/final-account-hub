@@ -16,7 +16,7 @@
         </div>
       </template>
       <template #content>
-        <Tabs value="accounts">
+        <Tabs v-model:value="activeTab" @update:value="onTabChange">
           <TabList>
             <Tab value="accounts"><i class="pi pi-users mr-2"></i>{{ t('accounts.title') }}</Tab>
             <Tab value="validation"><i class="pi pi-code mr-2"></i>{{ t('validation.title') }}</Tab>
@@ -411,6 +411,7 @@ const confirm = useConfirm()
 const toast = useToast()
 const categoryId = computed(() => route.params.categoryId)
 const baseUrl = computed(() => window.location.origin)
+const activeTab = ref('accounts')
 const categoryName = ref('')
 const accounts = ref([])
 const loading = ref(false)
@@ -484,11 +485,14 @@ const loadAccounts = async (page = 1, limit = rowsPerPage.value) => {
   validationConcurrency.value = cat?.validation_concurrency || 1
   validationCron.value = cat?.validation_cron || '0 0 * * *'
   historyLimit.value = cat?.history_limit || 1000
-  loadAPIHistory()
-  const runsRes = await api.getValidationRuns(categoryId.value)
-  validationRuns.value = runsRes.data || []
-  startRunsPolling()
-  loadPackages()
+  if (activeTab.value === 'validation') {
+    const runsRes = await api.getValidationRuns(categoryId.value)
+    validationRuns.value = runsRes.data || []
+    startRunsPolling()
+    loadPackages()
+  } else if (activeTab.value === 'api') {
+    loadAPIHistory()
+  }
   const statsRes = await api.getAccountStats(categoryId.value)
   const stats = statsRes.data || {}
   chartData.value = buildChartData(stats)
@@ -519,7 +523,21 @@ const buildChartData = (stats) => {
   }
 }
 
-watch(categoryId, loadAccounts, { immediate: true })
+watch(categoryId, () => { activeTab.value = 'accounts'; loadAccounts() }, { immediate: true })
+
+const onTabChange = async (tab) => {
+  if (!categoryId.value) return
+  if (tab === 'validation') {
+    const runsRes = await api.getValidationRuns(categoryId.value)
+    validationRuns.value = runsRes.data || []
+    startRunsPolling()
+    loadPackages()
+  } else if (tab === 'api') {
+    loadAPIHistory()
+  } else {
+    stopRunsPolling()
+  }
+}
 
 const pollValidationRuns = async () => {
   if (!categoryId.value) return
@@ -543,6 +561,10 @@ const startRunsPolling = () => {
     runsPollingInterval = true
     setTimeout(pollValidationRuns, 1000)
   }
+}
+
+const stopRunsPolling = () => {
+  runsPollingInterval = null
 }
 
 const onPage = (event) => {

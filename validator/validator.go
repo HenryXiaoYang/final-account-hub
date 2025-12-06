@@ -84,7 +84,7 @@ func validateCategory(cat database.Category) {
 	logger.Info.Printf("Starting validation for category %s (ID: %d)", cat.Name, cat.ID)
 
 	var accounts []database.Account
-	database.DB.Where("category_id = ? AND used = false AND banned = false", cat.ID).Find(&accounts)
+	database.DB.Where("category_id = ? AND banned = false", cat.ID).Find(&accounts)
 	logger.Info.Printf("Found %d accounts to validate", len(accounts))
 
 	// Create run record

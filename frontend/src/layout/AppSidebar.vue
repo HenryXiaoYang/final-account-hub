@@ -3,23 +3,23 @@
         <div class="layout-menu-container p-4">
             <div @click="goHome" :class="['flex items-center gap-2 py-3 px-4 cursor-pointer transition-colors', !selectedCategoryId ? 'bg-primary text-primary-contrast' : 'hover:bg-emphasis']">
                 <i class="pi pi-home"></i>
-                <span class="font-bold">Home</span>
+                <span class="font-bold">{{ t('common.home') }}</span>
             </div>
             <Accordion v-model:value="accordionValue" :pt="{ root: 'w-full' }">
                 <AccordionPanel value="categories" :pt="{ root: 'border-0' }">
                     <AccordionHeader :pt="{ root: 'flex-row-reverse justify-between py-3 px-4 border-0 bg-transparent' }">
                         <span class="flex items-center gap-2">
                             <i class="pi pi-folder"></i>
-                            <span class="font-bold">Categories</span>
+                            <span class="font-bold">{{ t('common.categories') }}</span>
                         </span>
                     </AccordionHeader>
                     <AccordionContent>
                         <div class="flex gap-2 mb-3">
-                            <InputText v-model="newCategory" placeholder="Category name" class="flex-1" size="small" @keyup.enter="createCategory" />
+                            <InputText v-model="newCategory" :placeholder="t('sidebar.categoryName')" class="flex-1" size="small" @keyup.enter="createCategory" />
                             <Button icon="pi pi-plus" size="small" @click="createCategory" />
                         </div>
                         <div v-if="categories.length === 0" class="text-sm text-gray-500 text-center py-2">
-                            No categories
+                            {{ t('sidebar.noCategories') }}
                         </div>
                         <ul v-else class="list-none p-0 m-0">
                             <li v-for="cat in categories" :key="cat.id" class="border-b" style="border-color: var(--p-amber-500)">
@@ -44,6 +44,7 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useConfirm } from 'primevue/useconfirm'
 import { useToast } from 'primevue/usetoast'
+import { useI18n } from 'vue-i18n'
 import api from '../api'
 import InputText from 'primevue/inputtext'
 import Button from 'primevue/button'
@@ -52,6 +53,7 @@ import AccordionPanel from 'primevue/accordionpanel'
 import AccordionHeader from 'primevue/accordionheader'
 import AccordionContent from 'primevue/accordioncontent'
 
+const { t } = useI18n()
 const router = useRouter()
 const confirm = useConfirm()
 const toast = useToast()
@@ -68,11 +70,11 @@ const loadCategories = async () => {
 const createCategory = async () => {
     if (!newCategory.value) return
     if (categories.value.some(c => c.name.toLowerCase() === newCategory.value.toLowerCase())) {
-        toast.add({ severity: 'warn', summary: 'Warning', detail: 'Category already exists', life: 3000 })
+        toast.add({ severity: 'warn', summary: t('common.warning'), detail: t('sidebar.categoryExists'), life: 3000 })
         return
     }
     await api.createCategory(newCategory.value)
-    toast.add({ severity: 'success', summary: 'Success', detail: 'Category created', life: 3000 })
+    toast.add({ severity: 'success', summary: t('common.success'), detail: t('sidebar.categoryCreated'), life: 3000 })
     newCategory.value = ''
     await loadCategories()
 }
@@ -89,12 +91,12 @@ const selectCategory = (cat) => {
 
 const confirmDelete = (cat) => {
     confirm.require({
-        message: `Delete "${cat.name}"? All accounts in this category will be permanently deleted and cannot be recovered.`,
-        header: 'Confirm Delete',
+        message: t('sidebar.confirmDelete', { name: cat.name }),
+        header: t('sidebar.confirmDeleteHeader'),
         icon: 'pi pi-exclamation-triangle',
         accept: async () => {
             await api.deleteCategory(cat.id)
-            toast.add({ severity: 'success', summary: 'Success', detail: 'Category deleted', life: 3000 })
+            toast.add({ severity: 'success', summary: t('common.success'), detail: t('sidebar.categoryDeleted'), life: 3000 })
             if (selectedCategoryId.value === cat.id) {
                 router.push('/dashboard')
             }

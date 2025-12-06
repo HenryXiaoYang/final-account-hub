@@ -19,7 +19,7 @@ import (
 )
 
 func main() {
-	godotenv.Load()
+	godotenv.Load(".env")
 	if mode := os.Getenv("GIN_MODE"); mode != "" {
 		gin.SetMode(mode)
 	}

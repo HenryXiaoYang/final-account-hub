@@ -48,7 +48,9 @@ func InitDB() {
 	sqlDB.SetMaxOpenConns(getEnvInt("DB_MAX_OPEN_CONNS", 100))
 	sqlDB.SetConnMaxLifetime(time.Duration(getEnvInt("DB_CONN_MAX_LIFETIME_MINUTES", 60)) * time.Minute)
 
-	DB.AutoMigrate(&Category{}, &Account{}, &ValidationRun{}, &APICallHistory{})
+	if err := DB.AutoMigrate(&Category{}, &Account{}, &ValidationRun{}, &APICallHistory{}); err != nil {
+		logger.Error.Fatal("Failed to migrate database:", err)
+	}
 }
 
 func createPostgresDB(dsn string) {

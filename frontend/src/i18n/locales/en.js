@@ -64,10 +64,13 @@ export default {
     accountExists: 'Account already exists',
     usedDeleted: 'Used accounts deleted',
     bannedDeleted: 'Banned accounts deleted',
+    usedDeletedCount: 'Deleted {count} used account(s)',
+    bannedDeletedCount: 'Deleted {count} banned account(s)',
     selectedDeleted: 'Selected accounts deleted',
-    confirmDeleteUsed: 'Delete all used accounts?',
-    confirmDeleteBanned: 'Delete all banned accounts?',
-    confirmDeleteSelected: 'Delete {count} selected account(s)?'
+    confirmDeleteUsed: 'Delete {count} used account(s)?',
+    confirmDeleteBanned: 'Delete {count} banned account(s)?',
+    confirmDeleteSelected: 'Delete {count} selected account(s)?',
+    deleting: 'Deleting...'
   },
   validation: {
     title: 'Validation',

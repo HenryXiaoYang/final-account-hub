@@ -164,20 +164,53 @@ func DeleteAccounts(c *gin.Context) {
 		return
 	}
 
-	query := database.DB.Where("category_id = ?", req.CategoryID)
+	// Build condition
+	condition := "category_id = ?"
+	args := []interface{}{req.CategoryID}
 	if req.Used && req.Banned {
-		query = query.Where("used = ? OR banned = ?", true, true)
+		condition += " AND (used = ? OR banned = ?)"
+		args = append(args, true, true)
 	} else if req.Used {
-		query = query.Where("used = ?", true)
+		condition += " AND used = ?"
+		args = append(args, true)
 	} else if req.Banned {
-		query = query.Where("banned = ?", true)
+		condition += " AND banned = ?"
+		args = append(args, true)
 	}
 
-	if err := query.Delete(&database.Account{}).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	// Count total
+	var total int64
+	database.DB.Model(&database.Account{}).Where(condition, args...).Count(&total)
+
+	if total == 0 {
+		c.JSON(http.StatusOK, gin.H{"message": "deleted", "count": 0, "total": 0})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+
+	// Set SSE headers
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+
+	// Batch delete with progress
+	var deleted int64
+	batchSize := 500
+	for deleted < total {
+		result := database.DB.Where("id IN (?)",
+			database.DB.Model(&database.Account{}).Select("id").Where(condition, args...).Limit(batchSize),
+		).Delete(&database.Account{})
+		if result.Error != nil {
+			c.SSEvent("error", gin.H{"error": result.Error.Error()})
+			return
+		}
+		if result.RowsAffected == 0 {
+			break
+		}
+		deleted += result.RowsAffected
+		c.SSEvent("progress", gin.H{"deleted": deleted, "total": total})
+		c.Writer.Flush()
+	}
+	c.SSEvent("done", gin.H{"deleted": deleted, "total": total})
 }
 
 func DeleteAccountsByIds(c *gin.Context) {
@@ -227,13 +260,23 @@ func GetAccountStats(c *gin.Context) {
 		Group("DATE(updated_at)").
 		Scan(&banned)
 
+	var available []struct {
+		Date  string `json:"date"`
+		Count int64  `json:"count"`
+	}
+	database.DB.Model(&database.Account{}).
+		Select("DATE(created_at) as date, COUNT(*) as count").
+		Where("category_id = ? AND used = ? AND banned = ?", categoryID, false, false).
+		Group("DATE(created_at)").
+		Scan(&available)
+
 	var totalCount, availableCount, usedCount, bannedCount int64
 	database.DB.Model(&database.Account{}).Where("category_id = ?", categoryID).Count(&totalCount)
 	database.DB.Model(&database.Account{}).Where("category_id = ? AND used = ? AND banned = ?", categoryID, false, false).Count(&availableCount)
 	database.DB.Model(&database.Account{}).Where("category_id = ? AND used = ?", categoryID, true).Count(&usedCount)
 	database.DB.Model(&database.Account{}).Where("category_id = ? AND banned = ?", categoryID, true).Count(&bannedCount)
 
-	c.JSON(http.StatusOK, gin.H{"added": added, "used": used, "banned": banned, "counts": gin.H{"total": totalCount, "available": availableCount, "used": usedCount, "banned": bannedCount}})
+	c.JSON(http.StatusOK, gin.H{"added": added, "used": used, "banned": banned, "available": available, "counts": gin.H{"total": totalCount, "available": availableCount, "used": usedCount, "banned": bannedCount}})
 }
 
 func GetGlobalStats(c *gin.Context) {
@@ -280,5 +323,15 @@ func GetGlobalStats(c *gin.Context) {
 		Group("DATE(updated_at)").
 		Scan(&banned)
 
-	c.JSON(http.StatusOK, gin.H{"accounts": stats, "categories": categories, "chart": gin.H{"added": added, "used": used, "banned": banned}})
+	var available []struct {
+		Date  string `json:"date"`
+		Count int64  `json:"count"`
+	}
+	database.DB.Model(&database.Account{}).
+		Select("DATE(created_at) as date, COUNT(*) as count").
+		Where("used = ? AND banned = ?", false, false).
+		Group("DATE(created_at)").
+		Scan(&available)
+
+	c.JSON(http.StatusOK, gin.H{"accounts": stats, "categories": categories, "chart": gin.H{"added": added, "used": used, "banned": banned, "available": available}})
 }

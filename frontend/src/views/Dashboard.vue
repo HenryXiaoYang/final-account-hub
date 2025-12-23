@@ -1,6 +1,9 @@
 <template>
   <div v-if="categoryId">
-    <Card>
+    <div v-if="loading" class="flex items-center justify-center py-20">
+      <i class="pi pi-spin pi-spinner text-4xl text-primary"></i>
+    </div>
+    <Card v-else>
       <template #title>
         <div class="flex items-center justify-between flex-wrap gap-4">
           <div class="flex items-center gap-2">
@@ -49,8 +52,8 @@
                 </template>
                 <template #end>
                   <Button :label="t('accounts.deleteSelected')" icon="pi pi-trash" severity="danger" @click="confirmDeleteSelected" :disabled="!selectedAccounts.length" class="mr-2" />
-                  <Button :label="t('accounts.deleteUsed')" icon="pi pi-trash" outlined @click="confirmDeleteUsed" class="mr-2" />
-                  <Button :label="t('accounts.deleteBanned')" icon="pi pi-ban" outlined @click="confirmDeleteBanned" />
+                  <Button :label="t('accounts.deleteUsed')" icon="pi pi-trash" outlined @click="confirmDeleteUsed" :loading="deleteLoading" class="mr-2" />
+                  <Button :label="t('accounts.deleteBanned')" icon="pi pi-ban" outlined @click="confirmDeleteBanned" :loading="deleteLoading" />
                 </template>
               </Toolbar>
 
@@ -370,6 +373,12 @@
       </template>
     </Card>
   </div>
+  <Dialog v-model:visible="deleteDialogVisible" :header="t('accounts.deleting')" :style="{ width: '400px' }" :closable="false" modal>
+    <div class="flex flex-col gap-3">
+      <ProgressBar :value="deleteProgress.total ? Math.round(deleteProgress.deleted / deleteProgress.total * 100) : 0" />
+      <div class="text-center text-sm">{{ deleteProgress.deleted }} / {{ deleteProgress.total }}</div>
+    </div>
+  </Dialog>
   <Dialog v-model:visible="logDialogVisible" :header="t('validation.runLog')" :style="{ width: '80vw', maxWidth: '1000px' }" modal>
     <div ref="logContainer" class="text-xs bg-surface-100 dark:bg-surface-800 p-3 rounded overflow-auto m-0" style="max-height: 70vh" @scroll="onLogScroll">
       <div v-if="logLoading" class="text-center py-2">{{ t('common.loading') }}</div>
@@ -406,6 +415,7 @@ import Tab from 'primevue/tab'
 import TabPanels from 'primevue/tabpanels'
 import TabPanel from 'primevue/tabpanel'
 import Dialog from 'primevue/dialog'
+import ProgressBar from 'primevue/progressbar'
 
 const route = useRoute()
 const confirm = useConfirm()
@@ -508,16 +518,19 @@ const buildChartData = (stats) => {
   const dates = new Set([
     ...(stats.added || []).map(s => s.date),
     ...(stats.used || []).map(s => s.date),
-    ...(stats.banned || []).map(s => s.date)
+    ...(stats.banned || []).map(s => s.date),
+    ...(stats.available || []).map(s => s.date)
   ])
   const labels = [...dates].sort()
   const addedMap = Object.fromEntries((stats.added || []).map(s => [s.date, s.count]))
   const usedMap = Object.fromEntries((stats.used || []).map(s => [s.date, s.count]))
   const bannedMap = Object.fromEntries((stats.banned || []).map(s => [s.date, s.count]))
+  const availableMap = Object.fromEntries((stats.available || []).map(s => [s.date, s.count]))
   return {
     labels,
     datasets: [
       { label: 'Added', data: labels.map(d => addedMap[d] || 0), borderColor: '#22c55e', tension: 0.4 },
+      { label: 'Available', data: labels.map(d => availableMap[d] || 0), borderColor: '#3b82f6', tension: 0.4 },
       { label: 'Used', data: labels.map(d => usedMap[d] || 0), borderColor: '#f59e0b', tension: 0.4 },
       { label: 'Banned', data: labels.map(d => bannedMap[d] || 0), borderColor: '#ef4444', tension: 0.4 }
     ]
@@ -629,9 +642,13 @@ const updateAccounts = async (ids, status) => {
   }
 }
 
+const deleteLoading = ref(false)
+const deleteProgress = ref({ deleted: 0, total: 0 })
+const deleteDialogVisible = ref(false)
+
 const confirmDeleteUsed = () => {
   confirm.require({
-    message: t('accounts.confirmDeleteUsed'),
+    message: t('accounts.confirmDeleteUsed', { count: usedCount.value }),
     header: t('common.confirm'),
     icon: 'pi pi-exclamation-triangle',
     accept: deleteUsed
@@ -639,15 +656,25 @@ const confirmDeleteUsed = () => {
 }
 
 const deleteUsed = async () => {
-  await api.deleteAccounts(Number(categoryId.value), true, false)
-  toast.add({ severity: 'success', summary: t('common.success'), detail: t('accounts.usedDeleted'), life: 3000 })
-  await loadAccounts(1, rowsPerPage.value)
-  await refreshCounts()
+  deleteLoading.value = true
+  deleteProgress.value = { deleted: 0, total: usedCount.value }
+  deleteDialogVisible.value = true
+  try {
+    const result = await api.deleteAccountsStream(Number(categoryId.value), true, false, (data) => {
+      deleteProgress.value = data
+    })
+    toast.add({ severity: 'success', summary: t('common.success'), detail: t('accounts.usedDeletedCount', { count: result.deleted || 0 }), life: 3000 })
+    await loadAccounts(1, rowsPerPage.value)
+    await refreshCounts()
+  } finally {
+    deleteLoading.value = false
+    deleteDialogVisible.value = false
+  }
 }
 
 const confirmDeleteBanned = () => {
   confirm.require({
-    message: t('accounts.confirmDeleteBanned'),
+    message: t('accounts.confirmDeleteBanned', { count: bannedCount.value }),
     header: t('common.confirm'),
     icon: 'pi pi-exclamation-triangle',
     accept: deleteBanned
@@ -672,10 +699,20 @@ const deleteSelected = async () => {
 }
 
 const deleteBanned = async () => {
-  await api.deleteAccounts(Number(categoryId.value), false, true)
-  toast.add({ severity: 'success', summary: t('common.success'), detail: t('accounts.bannedDeleted'), life: 3000 })
-  await loadAccounts(1, rowsPerPage.value)
-  await refreshCounts()
+  deleteLoading.value = true
+  deleteProgress.value = { deleted: 0, total: bannedCount.value }
+  deleteDialogVisible.value = true
+  try {
+    const result = await api.deleteAccountsStream(Number(categoryId.value), false, true, (data) => {
+      deleteProgress.value = data
+    })
+    toast.add({ severity: 'success', summary: t('common.success'), detail: t('accounts.bannedDeletedCount', { count: result.deleted || 0 }), life: 3000 })
+    await loadAccounts(1, rowsPerPage.value)
+    await refreshCounts()
+  } finally {
+    deleteLoading.value = false
+    deleteDialogVisible.value = false
+  }
 }
 
 const saveValidationScript = async () => {

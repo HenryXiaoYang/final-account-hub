@@ -64,10 +64,13 @@ export default {
     accountExists: '账号已存在',
     usedDeleted: '已用账号已删除',
     bannedDeleted: '已封禁账号已删除',
+    usedDeletedCount: '已删除 {count} 个已用账号',
+    bannedDeletedCount: '已删除 {count} 个已封禁账号',
     selectedDeleted: '选中账号已删除',
-    confirmDeleteUsed: '删除所有已用账号？',
-    confirmDeleteBanned: '删除所有已封禁账号？',
-    confirmDeleteSelected: '删除 {count} 个选中的账号？'
+    confirmDeleteUsed: '删除 {count} 个已用账号？',
+    confirmDeleteBanned: '删除 {count} 个已封禁账号？',
+    confirmDeleteSelected: '删除 {count} 个选中的账号？',
+    deleting: '删除中...'
   },
   validation: {
     title: '验证',

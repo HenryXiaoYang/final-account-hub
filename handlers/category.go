@@ -78,6 +78,7 @@ func UpdateCategoryValidationScript(c *gin.Context) {
 		ValidationScript      string `json:"validation_script"`
 		ValidationConcurrency int    `json:"validation_concurrency"`
 		ValidationCron        string `json:"validation_cron"`
+		HistoryLimit          int    `json:"history_limit"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -89,10 +90,14 @@ func UpdateCategoryValidationScript(c *gin.Context) {
 	if req.ValidationCron == "" {
 		req.ValidationCron = "0 0 * * *"
 	}
+	if req.HistoryLimit < 1 {
+		req.HistoryLimit = 1000
+	}
 	if err := database.DB.Model(&database.Category{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"validation_script":      req.ValidationScript,
 		"validation_concurrency": req.ValidationConcurrency,
 		"validation_cron":        req.ValidationCron,
+		"history_limit":          req.HistoryLimit,
 	}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

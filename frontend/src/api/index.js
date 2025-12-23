@@ -17,7 +17,7 @@ export default {
   getCategories: () => api.get('/categories'),
   getCategory: (id) => api.get(`/categories/${id}`),
   deleteCategory: (id) => api.delete(`/categories/${id}`),
-  updateValidationScript: (id, validation_script, validation_concurrency, validation_cron) => api.put(`/categories/${id}/validation-script`, { validation_script, validation_concurrency, validation_cron }),
+  updateValidationScript: (id, validation_script, validation_concurrency, validation_cron, history_limit) => api.put(`/categories/${id}/validation-script`, { validation_script, validation_concurrency, validation_cron, history_limit }),
   testValidationScript: (categoryId, script, test_account) => api.post(`/categories/${categoryId}/test-validation`, { script, test_account }),
   getValidationRuns: (id) => api.get(`/categories/${id}/validation-runs`),
   runValidationNow: (id) => api.post(`/categories/${id}/run-validation`),

@@ -25,6 +25,7 @@ func main() {
 	}
 	logger.Init()
 	database.InitDB()
+	database.CleanupAllValidationRuns()
 	validator.StartScheduler()
 
 	r := gin.New()

@@ -111,6 +111,9 @@ func validateCategory(cat database.Category) {
 		return
 	}
 	logger.Info.Printf("Created run record ID: %d", run.ID)
+	if err := database.CleanupValidationRuns(cat.ID, cat.HistoryLimit); err != nil {
+		logger.Error.Printf("Failed to cleanup old validation runs: %v", err)
+	}
 	var stopped bool
 
 	concurrency := cat.ValidationConcurrency

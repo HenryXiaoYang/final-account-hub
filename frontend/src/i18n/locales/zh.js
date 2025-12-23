@@ -79,6 +79,7 @@ export default {
     scriptPrompt: '编写 Python 函数 validate(account: str) -> tuple[bool, bool]，返回 (used, banned)。账号格式：[你的格式]。验证逻辑：[你的逻辑]。',
     cron: '定时任务',
     concurrency: '并发数',
+    historyLimit: '历史记录上限',
     runNow: '立即运行',
     testScript: '测试脚本',
     testAccount: '测试账号数据',

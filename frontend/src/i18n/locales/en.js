@@ -79,6 +79,7 @@ export default {
     scriptPrompt: 'Write a Python function validate(account: str) -> tuple[bool, bool] that returns (used, banned). Account format: [YOUR_FORMAT]. Validation logic: [YOUR_LOGIC].',
     cron: 'Cron',
     concurrency: 'Concurrency',
+    historyLimit: 'History Limit',
     runNow: 'Run Now',
     testScript: 'Test Script',
     testAccount: 'Test Account Data',

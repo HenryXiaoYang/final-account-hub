@@ -139,7 +139,15 @@
                 </template>
               </Card>
               <Card class="mb-4">
-                <template #title>{{ t('validation.runHistory') }}</template>
+                <template #title>
+                  <div class="flex items-center justify-between">
+                    <span>{{ t('validation.runHistory') }}</span>
+                    <div class="flex items-center gap-2">
+                      <label class="text-sm font-normal">{{ t('validation.historyLimit') }}:</label>
+                      <InputNumber v-model="historyLimit" :min="1" :max="10000" inputClass="w-16" size="small" />
+                    </div>
+                  </div>
+                </template>
                 <template #content>
                   <DataTable :value="validationRuns" stripedRows>
                     <Column field="started_at" :header="t('validation.started')">
@@ -716,7 +724,7 @@ const deleteBanned = async () => {
 }
 
 const saveValidationScript = async () => {
-  await api.updateValidationScript(categoryId.value, validationScript.value, validationConcurrency.value, validationCron.value)
+  await api.updateValidationScript(categoryId.value, validationScript.value, validationConcurrency.value, validationCron.value, historyLimit.value)
   toast.add({ severity: 'success', summary: t('common.success'), detail: t('validation.scriptSaved'), life: 3000 })
 }
 

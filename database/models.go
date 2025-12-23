@@ -50,3 +50,28 @@ type APICallHistory struct {
 	StatusCode int       `json:"status_code"`
 	CreatedAt  time.Time `gorm:"index:idx_history_category_time" json:"created_at"`
 }
+
+func CleanupValidationRuns(categoryID uint, limit int) error {
+	if limit <= 0 {
+		limit = 1000
+	}
+	// Find the cutoff ID - the Nth newest record
+	var cutoffRun ValidationRun
+	err := DB.Where("category_id = ?", categoryID).
+		Order("started_at DESC, id DESC").Offset(limit).First(&cutoffRun).Error
+	if err != nil {
+		return nil // Not enough records to cleanup
+	}
+	// Delete all records older than cutoff, excluding running ones
+	return DB.Where("category_id = ? AND status != ? AND (started_at < ? OR (started_at = ? AND id < ?))",
+		categoryID, "running", cutoffRun.StartedAt, cutoffRun.StartedAt, cutoffRun.ID).
+		Delete(&ValidationRun{}).Error
+}
+
+func CleanupAllValidationRuns() {
+	var categories []Category
+	DB.Find(&categories)
+	for _, cat := range categories {
+		CleanupValidationRuns(cat.ID, cat.HistoryLimit)
+	}
+}

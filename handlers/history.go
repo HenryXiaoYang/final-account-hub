@@ -38,7 +38,7 @@ func RecordAPICall(categoryID uint, endpoint, method, request, requestIP string,
 func GetAPICallHistory(c *gin.Context) {
 	categoryID := c.Param("id")
 	var history []database.APICallHistory
-	database.DB.Where("category_id = ?", categoryID).Order("created_at DESC").Find(&history)
+	database.DB.Where("category_id = ?", categoryID).Order("created_at DESC").Limit(1000).Find(&history)
 	c.JSON(http.StatusOK, history)
 }
 

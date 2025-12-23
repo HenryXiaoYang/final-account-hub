@@ -17,6 +17,22 @@ var (
 	rateMutex      sync.RWMutex
 )
 
+func init() {
+	go func() {
+		for {
+			time.Sleep(15 * time.Minute)
+			rateMutex.Lock()
+			now := time.Now()
+			for ip, until := range blockedUntil {
+				if now.After(until) {
+					delete(blockedUntil, ip)
+				}
+			}
+			rateMutex.Unlock()
+		}
+	}()
+}
+
 func getEnvInt(key string, def int) int {
 	if v := os.Getenv(key); v != "" {
 		if i, err := strconv.Atoi(v); err == nil {

@@ -86,6 +86,8 @@ func UpdateCategoryValidationScript(c *gin.Context) {
 	}
 	if req.ValidationConcurrency < 1 {
 		req.ValidationConcurrency = 1
+	} else if req.ValidationConcurrency > 100 {
+		req.ValidationConcurrency = 100
 	}
 	if req.ValidationCron == "" {
 		req.ValidationCron = "0 0 * * *"
@@ -210,15 +212,20 @@ func GetValidationRunLog(c *gin.Context) {
 	total := len(lines)
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
-
-	end := total
-	start := end - offset - limit
-	if start < 0 {
-		start = 0
+	if offset < 0 {
+		offset = 0
 	}
-	end = end - offset
+	if limit <= 0 {
+		limit = 100
+	}
+
+	end := total - offset
 	if end < 0 {
 		end = 0
+	}
+	start := end - limit
+	if start < 0 {
+		start = 0
 	}
 
 	c.JSON(http.StatusOK, gin.H{"lines": lines[start:end], "total": total, "has_more": start > 0})
@@ -235,7 +242,9 @@ func ensureVenv(categoryID string) error {
 		if err := os.MkdirAll("./data/venvs", 0755); err != nil {
 			return fmt.Errorf("failed to create venvs directory: %s", err)
 		}
-		cmd := exec.Command("uv", "venv", venvPath, "--python", "3.12")
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "uv", "venv", venvPath, "--python", "3.12")
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("venv creation failed: %s", string(output))
@@ -250,7 +259,9 @@ func GetUVPackages(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"packages": []interface{}{}})
 		return
 	}
-	cmd := exec.Command("uv", "pip", "list", "--python", getVenvPath(id)+"/bin/python", "--format=json")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "uv", "pip", "list", "--python", getVenvPath(id)+"/bin/python", "--format=json")
 	output, err := cmd.Output()
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"packages": []interface{}{}})
@@ -276,7 +287,9 @@ func InstallUVPackage(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"success": false, "output": err.Error()})
 		return
 	}
-	cmd := exec.Command("uv", "pip", "install", "--python", getVenvPath(id)+"/bin/python", req.Package)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "uv", "pip", "install", "--python", getVenvPath(id)+"/bin/python", req.Package)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "output": string(output)})
@@ -298,7 +311,9 @@ func UninstallUVPackage(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid package name"})
 		return
 	}
-	cmd := exec.Command("uv", "pip", "uninstall", "--python", getVenvPath(id)+"/bin/python", req.Package)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "uv", "pip", "uninstall", "--python", getVenvPath(id)+"/bin/python", req.Package)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "output": string(output)})
@@ -323,12 +338,16 @@ func InstallRequirements(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "output": err.Error()})
 		return
 	}
-	defer os.Remove(tmpFile.Name())
-	if err := c.SaveUploadedFile(file, tmpFile.Name()); err != nil {
+	tmpPath := tmpFile.Name()
+	tmpFile.Close()
+	defer os.Remove(tmpPath)
+	if err := c.SaveUploadedFile(file, tmpPath); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "output": err.Error()})
 		return
 	}
-	cmd := exec.Command("uv", "pip", "install", "--python", getVenvPath(id)+"/bin/python", "-r", tmpFile.Name())
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "uv", "pip", "install", "--python", getVenvPath(id)+"/bin/python", "-r", tmpPath)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "output": string(output)})

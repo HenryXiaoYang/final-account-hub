@@ -45,7 +45,10 @@ func InitDB() {
 		logger.Error.Fatal("Failed to connect to database:", err)
 	}
 
-	sqlDB, _ := DB.DB()
+	sqlDB, err := DB.DB()
+	if err != nil {
+		logger.Error.Fatal("Failed to get database handle:", err)
+	}
 	sqlDB.SetMaxIdleConns(getEnvInt("DB_MAX_IDLE_CONNS", 10))
 	sqlDB.SetMaxOpenConns(getEnvInt("DB_MAX_OPEN_CONNS", 100))
 	sqlDB.SetConnMaxLifetime(time.Duration(getEnvInt("DB_CONN_MAX_LIFETIME_MINUTES", 60)) * time.Minute)

@@ -52,6 +52,10 @@ func AddAccountsBulk(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if len(req.Data) > 10000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "max 10000 items per request"})
+		return
+	}
 
 	var existingData []string
 	database.DB.Model(&database.Account{}).Where("category_id = ? AND data IN ?", req.CategoryID, req.Data).Pluck("data", &existingData)
@@ -108,6 +112,11 @@ func FetchAccounts(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if req.Count < 1 {
+		req.Count = 1
+	} else if req.Count > 1000 {
+		req.Count = 1000
+	}
 
 	accounts := []database.Account{}
 	err := database.DB.Transaction(func(tx *gorm.DB) error {
@@ -144,10 +153,16 @@ func UpdateAccounts(c *gin.Context) {
 		return
 	}
 	if req.Used != nil {
-		database.DB.Model(&database.Account{}).Where("id IN ?", req.IDs).Update("used", *req.Used)
+		if err := database.DB.Model(&database.Account{}).Where("id IN ?", req.IDs).Update("used", *req.Used).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 	}
 	if req.Banned != nil {
-		database.DB.Model(&database.Account{}).Where("id IN ?", req.IDs).Update("banned", *req.Banned)
+		if err := database.DB.Model(&database.Account{}).Where("id IN ?", req.IDs).Update("banned", *req.Banned).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "updated"})
 }
@@ -219,6 +234,10 @@ func DeleteAccountsByIds(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if len(req.IDs) > 10000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "max 10000 IDs per request"})
 		return
 	}
 	if err := database.DB.Delete(&database.Account{}, req.IDs).Error; err != nil {

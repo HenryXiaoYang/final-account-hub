@@ -72,7 +72,10 @@ func addJobForCategory(cat database.Category) {
 	catID := cat.ID
 	entryID, err := cronScheduler.AddFunc(cat.ValidationCron, func() {
 		var c database.Category
-		database.DB.First(&c, catID)
+		if err := database.DB.First(&c, catID).Error; err != nil {
+			logger.Error.Printf("Failed to load category %d for validation: %v", catID, err)
+			return
+		}
 		validateCategory(c)
 	})
 	if err != nil {
@@ -96,7 +99,7 @@ func validateCategory(cat database.Category) {
 	logger.Info.Printf("Starting validation for category %s (ID: %d)", cat.Name, cat.ID)
 
 	var accounts []database.Account
-	database.DB.Where("category_id = ? AND banned = false", cat.ID).Find(&accounts)
+	database.DB.Where("category_id = ? AND banned = false", cat.ID).Limit(100000).Find(&accounts)
 	logger.Info.Printf("Found %d accounts to validate", len(accounts))
 
 	// Create run record
@@ -119,6 +122,8 @@ func validateCategory(cat database.Category) {
 	concurrency := cat.ValidationConcurrency
 	if concurrency < 1 {
 		concurrency = 1
+	} else if concurrency > 100 {
+		concurrency = 100
 	}
 
 	var wg sync.WaitGroup
@@ -126,12 +131,16 @@ func validateCategory(cat database.Category) {
 	var processedCount int32
 	var logMutex sync.Mutex
 	var logBuilder strings.Builder
+	const maxLogSize = 1 << 20 // 1MB
 
 	appendLog := func(msg string) {
 		logMutex.Lock()
+		defer logMutex.Unlock()
+		if logBuilder.Len() >= maxLogSize {
+			return
+		}
 		logBuilder.WriteString(msg + "\n")
 		database.DB.Model(&run).Update("log", logBuilder.String())
-		logMutex.Unlock()
 	}
 
 	appendLog(fmt.Sprintf("[%s] Starting validation for %d accounts", time.Now().Format("15:04:05"), len(accounts)))
@@ -151,6 +160,11 @@ func validateCategory(cat database.Category) {
 		wg.Add(1)
 		worker := <-workerSlots
 		go func(acc database.Account, worker int) {
+			defer func() {
+				if r := recover(); r != nil {
+					logger.Error.Printf("validator worker panic: %v", r)
+				}
+			}()
 			defer func() { workerSlots <- worker }()
 			defer wg.Done()
 			defer func() {

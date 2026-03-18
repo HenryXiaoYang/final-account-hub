@@ -167,3 +167,4 @@ go.work
 data/
 .idea
 .claude
+.ace-tool/

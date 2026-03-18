@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 
@@ -92,13 +93,30 @@ func GetAccounts(c *gin.Context) {
 	if limit < 1 || limit > 1000 {
 		limit = 100
 	}
-	offset := (page - 1) * limit
 
 	var total int64
-	database.DB.Model(&database.Account{}).Where("category_id = ?", categoryID).Count(&total)
-
 	var accounts []database.Account
-	database.DB.Where("category_id = ?", categoryID).Offset(offset).Limit(limit).Find(&accounts)
+
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&database.Account{}).Where("category_id = ?", categoryID).Count(&total).Error; err != nil {
+			return err
+		}
+		// Clamp page to valid range
+		totalPages := int(math.Ceil(float64(total) / float64(limit)))
+		if totalPages < 1 {
+			totalPages = 1
+		}
+		if page > totalPages {
+			page = totalPages
+		}
+		offset := (page - 1) * limit
+		return tx.Where("category_id = ?", categoryID).Order("id").Offset(offset).Limit(limit).Find(&accounts).Error
+	})
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"data": accounts, "total": total, "page": page, "limit": limit})
 }
 
@@ -142,7 +160,54 @@ func FetchAccounts(c *gin.Context) {
 	c.JSON(http.StatusOK, accounts)
 }
 
-func UpdateAccounts(c *gin.Context) {
+func UpdateAccount(c *gin.Context) {
+	id := c.Param("id")
+	var req struct {
+		Data   *string `json:"data"`
+		Used   *bool   `json:"used"`
+		Banned *bool   `json:"banned"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.Data == nil && req.Used == nil && req.Banned == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "at least one field required"})
+		return
+	}
+
+	var account database.Account
+	if err := database.DB.First(&account, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "account not found"})
+		return
+	}
+
+	updates := map[string]interface{}{}
+	if req.Data != nil {
+		// Check uniqueness within same category
+		var existing database.Account
+		if database.DB.Where("category_id = ? AND data = ? AND id != ?", account.CategoryID, *req.Data, account.ID).First(&existing).Error == nil {
+			c.JSON(http.StatusConflict, gin.H{"error": "data already exists in this category"})
+			return
+		}
+		updates["data"] = *req.Data
+	}
+	if req.Used != nil {
+		updates["used"] = *req.Used
+	}
+	if req.Banned != nil {
+		updates["banned"] = *req.Banned
+	}
+
+	if err := database.DB.Model(&account).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	database.DB.First(&account, id)
+	c.JSON(http.StatusOK, account)
+}
+
+func BatchUpdateAccounts(c *gin.Context) {
 	var req struct {
 		IDs    []uint `json:"ids" binding:"required"`
 		Used   *bool  `json:"used"`
@@ -152,17 +217,22 @@ func UpdateAccounts(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	updates := map[string]interface{}{}
 	if req.Used != nil {
-		if err := database.DB.Model(&database.Account{}).Where("id IN ?", req.IDs).Update("used", *req.Used).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
+		updates["used"] = *req.Used
 	}
 	if req.Banned != nil {
-		if err := database.DB.Model(&database.Account{}).Where("id IN ?", req.IDs).Update("banned", *req.Banned).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
+		updates["banned"] = *req.Banned
+	}
+	if len(updates) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "at least one field required"})
+		return
+	}
+
+	if err := database.DB.Model(&database.Account{}).Where("id IN ?", req.IDs).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "updated"})
 }
@@ -249,53 +319,29 @@ func DeleteAccountsByIds(c *gin.Context) {
 
 func GetAccountStats(c *gin.Context) {
 	categoryID := c.Param("category_id")
-	var added []struct {
-		Date  string `json:"date"`
-		Count int64  `json:"count"`
-	}
-	database.DB.Model(&database.Account{}).
-		Select("DATE(created_at) as date, COUNT(*) as count").
-		Where("category_id = ?", categoryID).
-		Group("DATE(created_at)").
-		Scan(&added)
 
-	var used []struct {
-		Date  string `json:"date"`
-		Count int64  `json:"count"`
-	}
-	database.DB.Model(&database.Account{}).
-		Select("DATE(updated_at) as date, COUNT(*) as count").
-		Where("category_id = ? AND used = ?", categoryID, true).
-		Group("DATE(updated_at)").
-		Scan(&used)
-
-	var banned []struct {
-		Date  string `json:"date"`
-		Count int64  `json:"count"`
-	}
-	database.DB.Model(&database.Account{}).
-		Select("DATE(updated_at) as date, COUNT(*) as count").
-		Where("category_id = ? AND banned = ?", categoryID, true).
-		Group("DATE(updated_at)").
-		Scan(&banned)
-
-	var available []struct {
-		Date  string `json:"date"`
-		Count int64  `json:"count"`
-	}
-	database.DB.Model(&database.Account{}).
-		Select("DATE(created_at) as date, COUNT(*) as count").
-		Where("category_id = ? AND used = ? AND banned = ?", categoryID, false, false).
-		Group("DATE(created_at)").
-		Scan(&available)
-
+	// Real-time snapshot counts
 	var totalCount, availableCount, usedCount, bannedCount int64
-	database.DB.Model(&database.Account{}).Where("category_id = ?", categoryID).Count(&totalCount)
-	database.DB.Model(&database.Account{}).Where("category_id = ? AND used = ? AND banned = ?", categoryID, false, false).Count(&availableCount)
-	database.DB.Model(&database.Account{}).Where("category_id = ? AND used = ?", categoryID, true).Count(&usedCount)
-	database.DB.Model(&database.Account{}).Where("category_id = ? AND banned = ?", categoryID, true).Count(&bannedCount)
+	if err := database.DB.Model(&database.Account{}).Where("category_id = ?", categoryID).Count(&totalCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := database.DB.Model(&database.Account{}).Where("category_id = ? AND used = ? AND banned = ?", categoryID, false, false).Count(&availableCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := database.DB.Model(&database.Account{}).Where("category_id = ? AND used = ? AND banned = ?", categoryID, true, false).Count(&usedCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := database.DB.Model(&database.Account{}).Where("category_id = ? AND banned = ?", categoryID, true).Count(&bannedCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
-	c.JSON(http.StatusOK, gin.H{"added": added, "used": used, "banned": banned, "available": available, "counts": gin.H{"total": totalCount, "available": availableCount, "used": usedCount, "banned": bannedCount}})
+	c.JSON(http.StatusOK, gin.H{
+		"counts": gin.H{"total": totalCount, "available": availableCount, "used": usedCount, "banned": bannedCount},
+	})
 }
 
 func GetGlobalStats(c *gin.Context) {
@@ -305,52 +351,64 @@ func GetGlobalStats(c *gin.Context) {
 		Used      int64 `json:"used"`
 		Banned    int64 `json:"banned"`
 	}
-	database.DB.Model(&database.Account{}).Count(&stats.Total)
-	database.DB.Model(&database.Account{}).Where("used = ? AND banned = ?", false, false).Count(&stats.Available)
-	database.DB.Model(&database.Account{}).Where("used = ?", true).Count(&stats.Used)
-	database.DB.Model(&database.Account{}).Where("banned = ?", true).Count(&stats.Banned)
+	if err := database.DB.Model(&database.Account{}).Count(&stats.Total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := database.DB.Model(&database.Account{}).Where("used = ? AND banned = ?", false, false).Count(&stats.Available).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := database.DB.Model(&database.Account{}).Where("used = ? AND banned = ?", true, false).Count(&stats.Used).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := database.DB.Model(&database.Account{}).Where("banned = ?", true).Count(&stats.Banned).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	var categories int64
-	database.DB.Model(&database.Category{}).Count(&categories)
-
-	var added []struct {
-		Date  string `json:"date"`
-		Count int64  `json:"count"`
+	if err := database.DB.Model(&database.Category{}).Count(&categories).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
-	database.DB.Model(&database.Account{}).
-		Select("DATE(created_at) as date, COUNT(*) as count").
-		Group("DATE(created_at)").
-		Scan(&added)
 
-	var used []struct {
-		Date  string `json:"date"`
-		Count int64  `json:"count"`
+	c.JSON(http.StatusOK, gin.H{
+		"accounts":   stats,
+		"categories": categories,
+	})
+}
+
+// GetSnapshots returns snapshot history for a specific category.
+func GetSnapshots(c *gin.Context) {
+	categoryID := c.Param("category_id")
+	granularity := c.DefaultQuery("granularity", "1d")
+	if granularity != "1h" && granularity != "1d" && granularity != "1w" {
+		granularity = "1d"
 	}
-	database.DB.Model(&database.Account{}).
-		Select("DATE(updated_at) as date, COUNT(*) as count").
-		Where("used = ?", true).
-		Group("DATE(updated_at)").
-		Scan(&used)
 
-	var banned []struct {
-		Date  string `json:"date"`
-		Count int64  `json:"count"`
+	var snapshots []database.AccountSnapshot
+	if err := database.DB.Where("category_id = ? AND granularity = ?", categoryID, granularity).
+		Order("recorded_at ASC").Find(&snapshots).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
-	database.DB.Model(&database.Account{}).
-		Select("DATE(updated_at) as date, COUNT(*) as count").
-		Where("banned = ?", true).
-		Group("DATE(updated_at)").
-		Scan(&banned)
+	c.JSON(http.StatusOK, snapshots)
+}
 
-	var available []struct {
-		Date  string `json:"date"`
-		Count int64  `json:"count"`
+// GetGlobalSnapshots returns snapshot history for the global aggregate (category_id=0).
+func GetGlobalSnapshots(c *gin.Context) {
+	granularity := c.DefaultQuery("granularity", "1d")
+	if granularity != "1h" && granularity != "1d" && granularity != "1w" {
+		granularity = "1d"
 	}
-	database.DB.Model(&database.Account{}).
-		Select("DATE(created_at) as date, COUNT(*) as count").
-		Where("used = ? AND banned = ?", false, false).
-		Group("DATE(created_at)").
-		Scan(&available)
 
-	c.JSON(http.StatusOK, gin.H{"accounts": stats, "categories": categories, "chart": gin.H{"added": added, "used": used, "banned": banned, "available": available}})
+	var snapshots []database.AccountSnapshot
+	if err := database.DB.Where("category_id = 0 AND granularity = ?", granularity).
+		Order("recorded_at ASC").Find(&snapshots).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, snapshots)
 }

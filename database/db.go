@@ -53,9 +53,34 @@ func InitDB() {
 	sqlDB.SetMaxOpenConns(getEnvInt("DB_MAX_OPEN_CONNS", 100))
 	sqlDB.SetConnMaxLifetime(time.Duration(getEnvInt("DB_CONN_MAX_LIFETIME_MINUTES", 60)) * time.Minute)
 
-	if err := DB.AutoMigrate(&Category{}, &Account{}, &ValidationRun{}, &APICallHistory{}); err != nil {
+	if err := DB.AutoMigrate(&Category{}, &Account{}, &ValidationRun{}, &APICallHistory{}, &AccountSnapshot{}); err != nil {
 		logger.Error.Fatal("Failed to migrate database:", err)
 	}
+
+	// One-time migration: copy old history_limit to new split fields
+	migrateHistoryLimit()
+
+	// Clean up stale validation runs from previous crashes/restarts
+	DB.Model(&ValidationRun{}).
+		Where("status IN ?", []string{"running", "stopping"}).
+		Updates(map[string]interface{}{"status": "stopped", "finished_at": time.Now()})
+}
+
+// migrateHistoryLimit copies the old shared history_limit value into the new
+// split fields (validation_history_limit, api_history_limit) for any rows that
+// still have a non-zero history_limit while the new columns are at their
+// defaults. Safe to run repeatedly — it's a no-op once migration is done.
+func migrateHistoryLimit() {
+	if !DB.Migrator().HasColumn(&Category{}, "history_limit") {
+		return
+	}
+	DB.Exec(`UPDATE categories
+		SET validation_history_limit = history_limit,
+		    api_history_limit        = history_limit
+		WHERE history_limit > 0
+		  AND validation_history_limit IN (0, 50)
+		  AND api_history_limit        IN (0, 1000)`)
+	logger.Info.Println("Migrated history_limit → validation_history_limit + api_history_limit")
 }
 
 func createPostgresDB(dsn string) {

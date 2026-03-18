@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"os/exec"
@@ -15,6 +16,7 @@ import (
 	"final-account-hub/validator"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 var validPackageName = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
@@ -55,20 +57,29 @@ func CreateCategoryIfNotExists(c *gin.Context) {
 
 func GetCategories(c *gin.Context) {
 	var categories []database.Category
-	database.DB.Find(&categories)
+	database.DB.Order("id").Find(&categories)
 	c.JSON(http.StatusOK, categories)
 }
 
 func DeleteCategory(c *gin.Context) {
 	id := c.Param("id")
-	if err := database.DB.Where("category_id = ?", id).Delete(&database.Account{}).Error; err != nil {
+	var catID uint
+	fmt.Sscanf(id, "%d", &catID)
+
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("category_id = ?", id).Delete(&database.Account{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&database.Category{}, id).Error
+	})
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if err := database.DB.Delete(&database.Category{}, id).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
+
+	// Clean up snapshots outside transaction (non-critical)
+	go database.CleanupSnapshotsForCategory(catID)
+
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
 }
 
@@ -78,7 +89,8 @@ func UpdateCategoryValidationScript(c *gin.Context) {
 		ValidationScript      string `json:"validation_script"`
 		ValidationConcurrency int    `json:"validation_concurrency"`
 		ValidationCron        string `json:"validation_cron"`
-		HistoryLimit          int    `json:"history_limit"`
+		ValidationEnabled     *bool  `json:"validation_enabled"`
+		ValidationScope       string `json:"validation_scope"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -92,15 +104,32 @@ func UpdateCategoryValidationScript(c *gin.Context) {
 	if req.ValidationCron == "" {
 		req.ValidationCron = "0 0 * * *"
 	}
-	if req.HistoryLimit < 1 {
-		req.HistoryLimit = 1000
+
+	// Validate scope: only allow combinations of available, used, banned
+	if req.ValidationScope != "" {
+		allowed := map[string]bool{"available": true, "used": true, "banned": true}
+		parts := strings.Split(req.ValidationScope, ",")
+		for _, p := range parts {
+			if !allowed[strings.TrimSpace(p)] {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid validation_scope value: " + p})
+				return
+			}
+		}
+	} else {
+		req.ValidationScope = "available,used"
 	}
-	if err := database.DB.Model(&database.Category{}).Where("id = ?", id).Updates(map[string]interface{}{
+
+	updates := map[string]interface{}{
 		"validation_script":      req.ValidationScript,
 		"validation_concurrency": req.ValidationConcurrency,
 		"validation_cron":        req.ValidationCron,
-		"history_limit":          req.HistoryLimit,
-	}).Error; err != nil {
+		"validation_scope":       req.ValidationScope,
+	}
+	if req.ValidationEnabled != nil {
+		updates["validation_enabled"] = *req.ValidationEnabled
+	}
+
+	if err := database.DB.Model(&database.Category{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -173,9 +202,50 @@ print(banned)
 
 func GetValidationRuns(c *gin.Context) {
 	id := c.Param("id")
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 200 {
+		limit = 20
+	}
+
+	var total int64
+	database.DB.Model(&database.ValidationRun{}).Where("category_id = ?", id).Count(&total)
+
+	totalPages := int(math.Ceil(float64(total) / float64(limit)))
+	if totalPages < 1 {
+		totalPages = 1
+	}
+	if page > totalPages {
+		page = totalPages
+	}
+	offset := (page - 1) * limit
+
 	var runs []database.ValidationRun
-	database.DB.Select("id, category_id, status, total_count, processed_count, banned_count, error_message, started_at, finished_at").Where("category_id = ?", id).Order("started_at desc").Limit(20).Find(&runs)
-	c.JSON(http.StatusOK, runs)
+	database.DB.Select("id, category_id, status, total_count, processed_count, used_count, banned_count, error_message, started_at, finished_at").
+		Where("category_id = ?", id).Order("started_at desc").Offset(offset).Limit(limit).Find(&runs)
+	c.JSON(http.StatusOK, gin.H{"data": runs, "total": total, "page": page, "limit": limit})
+}
+
+func DeleteValidationRuns(c *gin.Context) {
+	id := c.Param("id")
+	var req struct {
+		IDs []uint `json:"ids" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	// Exclude running and stopping records from deletion
+	result := database.DB.Where("id IN ? AND category_id = ? AND status NOT IN ?", req.IDs, id, []string{"running", "stopping"}).
+		Delete(&database.ValidationRun{})
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "deleted", "count": result.RowsAffected})
 }
 
 func RunValidationNow(c *gin.Context) {
@@ -193,11 +263,8 @@ func StopValidation(c *gin.Context) {
 	id := c.Param("id")
 	var catID uint
 	fmt.Sscanf(id, "%d", &catID)
-	if validator.StopValidation(catID) {
-		c.JSON(http.StatusOK, gin.H{"message": "validation stopped"})
-	} else {
-		c.JSON(http.StatusNotFound, gin.H{"error": "no running validation"})
-	}
+	validator.StopValidation(catID)
+	c.JSON(http.StatusOK, gin.H{"message": "validation stopped"})
 }
 
 func GetValidationRunLog(c *gin.Context) {
@@ -205,6 +272,12 @@ func GetValidationRunLog(c *gin.Context) {
 	var run database.ValidationRun
 	if err := database.DB.First(&run, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "run not found"})
+		return
+	}
+
+	// Empty log boundary: return early to avoid splitting "" into [""]
+	if run.Log == "" {
+		c.JSON(http.StatusOK, gin.H{"lines": []string{}, "total": 0, "has_more": false})
 		return
 	}
 
@@ -354,4 +427,56 @@ func InstallRequirements(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "output": string(output)})
+}
+
+func GetCategoriesOverview(c *gin.Context) {
+	type CategoryOverview struct {
+		ID              uint       `json:"id"`
+		Name            string     `json:"name"`
+		Total           int64      `json:"total"`
+		Available       int64      `json:"available"`
+		Used            int64      `json:"used"`
+		Banned          int64      `json:"banned"`
+		LastValidatedAt *time.Time `json:"last_validated_at"`
+	}
+
+	var categories []database.Category
+	database.DB.Order("id").Find(&categories)
+
+	results := make([]CategoryOverview, 0, len(categories))
+	for _, cat := range categories {
+		var total, available, used, banned int64
+		database.DB.Model(&database.Account{}).Where("category_id = ?", cat.ID).Count(&total)
+		database.DB.Model(&database.Account{}).Where("category_id = ? AND used = ? AND banned = ?", cat.ID, false, false).Count(&available)
+		database.DB.Model(&database.Account{}).Where("category_id = ? AND used = ? AND banned = ?", cat.ID, true, false).Count(&used)
+		database.DB.Model(&database.Account{}).Where("category_id = ? AND banned = ?", cat.ID, true).Count(&banned)
+		results = append(results, CategoryOverview{
+			ID: cat.ID, Name: cat.Name,
+			Total: total, Available: available, Used: used, Banned: banned,
+			LastValidatedAt: cat.LastValidatedAt,
+		})
+	}
+	c.JSON(http.StatusOK, results)
+}
+
+func GetRecentValidationRuns(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
+	if limit < 1 || limit > 50 {
+		limit = 10
+	}
+
+	type RunWithCategory struct {
+		database.ValidationRun
+		CategoryName string `json:"category_name"`
+	}
+
+	var runs []RunWithCategory
+	database.DB.Table("validation_runs").
+		Select("validation_runs.id, validation_runs.category_id, categories.name as category_name, validation_runs.status, validation_runs.total_count, validation_runs.processed_count, validation_runs.used_count, validation_runs.banned_count, validation_runs.started_at, validation_runs.finished_at").
+		Joins("LEFT JOIN categories ON categories.id = validation_runs.category_id").
+		Order("validation_runs.started_at DESC").
+		Limit(limit).
+		Scan(&runs)
+
+	c.JSON(http.StatusOK, runs)
 }

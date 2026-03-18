@@ -1,0 +1,119 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: #f8f9fb;
+    --foreground: #1a1f2e;
+    --muted: #eef1f6;
+    --muted-foreground: #5c6578;
+    --card: #ffffff;
+    --card-foreground: #1a1f2e;
+    --popover: #ffffff;
+    --popover-foreground: #1a1f2e;
+    --primary: #2563eb;
+    --primary-foreground: #ffffff;
+    --secondary: #eef1f6;
+    --secondary-foreground: #1a1f2e;
+    --accent: #eef1f6;
+    --accent-foreground: #1a1f2e;
+    --destructive: #dc2626;
+    --destructive-foreground: #ffffff;
+    --border: #e2e5eb;
+    --input: #e2e5eb;
+    --ring: #2563eb;
+    --radius: 8px;
+    --success: #16a34a;
+    --warning: #ca8a04;
+    --danger: #dc2626;
+  }
+
+  .dark {
+    --background: #0f1117;
+    --foreground: #e0e3ea;
+    --muted: #1a1d27;
+    --muted-foreground: #838b9e;
+    --card: #16181f;
+    --card-foreground: #e0e3ea;
+    --popover: #1a1d27;
+    --popover-foreground: #e0e3ea;
+    --primary: #3b82f6;
+    --primary-foreground: #ffffff;
+    --secondary: #1f2330;
+    --secondary-foreground: #e0e3ea;
+    --accent: #1f2330;
+    --accent-foreground: #e0e3ea;
+    --destructive: #ef4444;
+    --destructive-foreground: #ffffff;
+    --border: #262a36;
+    --input: #262a36;
+    --ring: #3b82f6;
+    --success: #22c55e;
+    --warning: #eab308;
+    --danger: #ef4444;
+  }
+
+  * {
+    border-color: var(--border);
+  }
+
+  body {
+    font-family: 'Inter', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+    color: var(--foreground);
+    background:
+      radial-gradient(circle at 16% 22%, rgba(139, 192, 255, 0.15), transparent 36%),
+      radial-gradient(circle at 85% 0%, rgba(255, 186, 130, 0.12), transparent 42%),
+      linear-gradient(180deg, #fcfeff, #f4f7fb 60%, #eef3fa);
+    background-attachment: fixed;
+    min-height: 100vh;
+  }
+
+  .dark body {
+    background: var(--background);
+  }
+}
+
+/* Global focus-visible for all interactive elements */
+button:focus-visible,
+a:focus-visible,
+select:focus-visible,
+[role="checkbox"]:focus-visible,
+[role="tab"]:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.12);
+  border-radius: 3px;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Code blocks */
+pre code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}

@@ -247,7 +247,7 @@ Response (200):
 
 Ordered by ID. Page is clamped to valid range. Limit range: 1-1000, default 100.
 
-#### Fetch Accounts (Atomic)
+#### Fetch Accounts
 
 ```
 POST /api/accounts/fetch
@@ -257,7 +257,37 @@ POST /api/accounts/fetch
 {"category_id": 1, "count": 5}
 ```
 
-Response (200): Array of account objects. Selected accounts are atomically marked as `used` within a database transaction. Count range: 1-1000. This endpoint is logged in API call history.
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `category_id` | number | *(required)* | Target category ID |
+| `count` | number | *(required)* | Number of accounts to fetch (1-1000) |
+| `order` | string | `"sequential"` | `"sequential"` (by ID ascending) or `"random"` |
+| `account_type` | string \| string[] | `"available"` | Account status filter. Single string or array of: `"available"`, `"used"`, `"banned"` |
+| `mark_as_used` | boolean | `true` | Whether to mark fetched accounts as used |
+| `created_after` | string | -- | RFC 3339 timestamp, filter accounts created after this time |
+| `created_before` | string | -- | RFC 3339 timestamp, filter accounts created before this time |
+| `updated_after` | string | -- | RFC 3339 timestamp, filter accounts updated after this time |
+| `updated_before` | string | -- | RFC 3339 timestamp, filter accounts updated before this time |
+
+Response (200): Array of account objects. When `mark_as_used` is true (default), selected accounts are atomically marked as `used` within a database transaction. This endpoint is logged in API call history.
+
+Account type values:
+- `"available"` -- not used and not banned (`used=false, banned=false`)
+- `"used"` -- used but not banned (`used=true, banned=false`)
+- `"banned"` -- banned regardless of used status (`banned=true`)
+
+Examples:
+
+```json
+// Fetch 5 random available accounts (default behavior, backwards compatible)
+{"category_id": 1, "count": 5, "order": "random"}
+
+// Fetch used accounts without marking them
+{"category_id": 1, "count": 10, "account_type": "used", "mark_as_used": false}
+
+// Fetch available or used accounts created in the last 24 hours
+{"category_id": 1, "count": 20, "account_type": ["available", "used"], "created_after": "2025-01-01T00:00:00Z"}
+```
 
 #### Update Account
 

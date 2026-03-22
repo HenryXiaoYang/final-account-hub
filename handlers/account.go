@@ -6,6 +6,8 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"final-account-hub/database"
 
@@ -122,8 +124,15 @@ func GetAccounts(c *gin.Context) {
 
 func FetchAccounts(c *gin.Context) {
 	var req struct {
-		CategoryID uint `json:"category_id" binding:"required"`
-		Count      int  `json:"count" binding:"required"`
+		CategoryID    uint            `json:"category_id" binding:"required"`
+		Count         int             `json:"count" binding:"required"`
+		Order         string          `json:"order"`
+		AccountType   json.RawMessage `json:"account_type"`
+		MarkAsUsed    *bool           `json:"mark_as_used"`
+		CreatedAfter  *string         `json:"created_after"`
+		CreatedBefore *string         `json:"created_before"`
+		UpdatedAfter  *string         `json:"updated_after"`
+		UpdatedBefore *string         `json:"updated_before"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -136,12 +145,60 @@ func FetchAccounts(c *gin.Context) {
 		req.Count = 1000
 	}
 
+	// Parse account_type: string or []string, default "available"
+	accountTypes, err := parseAccountType(req.AccountType)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Parse time filters
+	timeFilters, err := parseTimeFilters(req.CreatedAfter, req.CreatedBefore, req.UpdatedAfter, req.UpdatedBefore)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Validate order
+	order := "sequential"
+	if req.Order != "" {
+		if req.Order != "sequential" && req.Order != "random" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "order must be 'sequential' or 'random'"})
+			return
+		}
+		order = req.Order
+	}
+
+	// Determine mark_as_used (default true)
+	markAsUsed := true
+	if req.MarkAsUsed != nil {
+		markAsUsed = *req.MarkAsUsed
+	}
+
 	accounts := []database.Account{}
-	err := database.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Raw("SELECT * FROM accounts WHERE category_id = ? AND used = ? AND banned = ? LIMIT ?", req.CategoryID, false, false, req.Count).Scan(&accounts).Error; err != nil {
+	err = database.DB.Transaction(func(tx *gorm.DB) error {
+		query := tx.Where("category_id = ?", req.CategoryID)
+
+		// Apply account type filter
+		query = applyAccountTypeFilter(query, accountTypes)
+
+		// Apply time filters
+		for _, tf := range timeFilters {
+			query = query.Where(tf.condition, tf.value)
+		}
+
+		// Apply ordering
+		if order == "random" {
+			query = query.Order("RANDOM()")
+		} else {
+			query = query.Order("id ASC")
+		}
+
+		if err := query.Limit(req.Count).Find(&accounts).Error; err != nil {
 			return err
 		}
-		if len(accounts) > 0 {
+
+		if len(accounts) > 0 && markAsUsed {
 			var ids []uint
 			for _, acc := range accounts {
 				ids = append(ids, acc.ID)
@@ -153,11 +210,125 @@ func FetchAccounts(c *gin.Context) {
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		go RecordAPICall(req.CategoryID, "/api/accounts/fetch", "POST", fmt.Sprintf(`{"category_id":%d,"count":%d}`, req.CategoryID, req.Count), c.ClientIP(), 500)
+		go RecordAPICall(req.CategoryID, "/api/accounts/fetch", "POST", buildFetchCallLog(req.CategoryID, req.Count, order, accountTypes, markAsUsed), c.ClientIP(), 500)
 		return
 	}
-	go RecordAPICall(req.CategoryID, "/api/accounts/fetch", "POST", fmt.Sprintf(`{"category_id":%d,"count":%d}`, req.CategoryID, req.Count), c.ClientIP(), 200)
+	go RecordAPICall(req.CategoryID, "/api/accounts/fetch", "POST", buildFetchCallLog(req.CategoryID, req.Count, order, accountTypes, markAsUsed), c.ClientIP(), 200)
 	c.JSON(http.StatusOK, accounts)
+}
+
+// parseAccountType parses the account_type field from JSON.
+// Accepts a single string or an array of strings.
+// Valid values: "available", "used", "banned". Defaults to ["available"].
+func parseAccountType(raw json.RawMessage) ([]string, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return []string{"available"}, nil
+	}
+
+	// Try string first
+	var single string
+	if err := json.Unmarshal(raw, &single); err == nil {
+		if err := validateAccountTypes([]string{single}); err != nil {
+			return nil, err
+		}
+		return []string{single}, nil
+	}
+
+	// Try []string
+	var multiple []string
+	if err := json.Unmarshal(raw, &multiple); err != nil {
+		return nil, fmt.Errorf("account_type must be a string or array of strings")
+	}
+	if len(multiple) == 0 {
+		return nil, fmt.Errorf("account_type array must not be empty")
+	}
+	if err := validateAccountTypes(multiple); err != nil {
+		return nil, err
+	}
+	return multiple, nil
+}
+
+func validateAccountTypes(types []string) error {
+	valid := map[string]bool{"available": true, "used": true, "banned": true}
+	for _, t := range types {
+		if !valid[t] {
+			return fmt.Errorf("invalid account_type '%s', must be one of: available, used, banned", t)
+		}
+	}
+	return nil
+}
+
+// applyAccountTypeFilter adds WHERE conditions based on account type(s).
+func applyAccountTypeFilter(query *gorm.DB, types []string) *gorm.DB {
+	// If all three types are selected, no status filter needed
+	has := map[string]bool{}
+	for _, t := range types {
+		has[t] = true
+	}
+	if has["available"] && has["used"] && has["banned"] {
+		return query
+	}
+
+	// Build OR conditions for each type
+	var conditions []string
+	var args []interface{}
+	for _, t := range types {
+		switch t {
+		case "available":
+			conditions = append(conditions, "(used = ? AND banned = ?)")
+			args = append(args, false, false)
+		case "used":
+			conditions = append(conditions, "(used = ? AND banned = ?)")
+			args = append(args, true, false)
+		case "banned":
+			conditions = append(conditions, "(banned = ?)")
+			args = append(args, true)
+		}
+	}
+
+	combined := strings.Join(conditions, " OR ")
+	return query.Where(combined, args...)
+}
+
+type timeFilter struct {
+	condition string
+	value     time.Time
+}
+
+// parseTimeFilters parses RFC3339 time strings into query conditions.
+func parseTimeFilters(createdAfter, createdBefore, updatedAfter, updatedBefore *string) ([]timeFilter, error) {
+	var filters []timeFilter
+
+	pairs := []struct {
+		val       *string
+		condition string
+		name      string
+	}{
+		{createdAfter, "created_at >= ?", "created_after"},
+		{createdBefore, "created_at <= ?", "created_before"},
+		{updatedAfter, "updated_at >= ?", "updated_after"},
+		{updatedBefore, "updated_at <= ?", "updated_before"},
+	}
+
+	for _, p := range pairs {
+		if p.val == nil || *p.val == "" {
+			continue
+		}
+		t, err := time.Parse(time.RFC3339, *p.val)
+		if err != nil {
+			return nil, fmt.Errorf("invalid %s: must be RFC3339 format (e.g. 2025-01-01T00:00:00Z)", p.name)
+		}
+		filters = append(filters, timeFilter{condition: p.condition, value: t})
+	}
+
+	return filters, nil
+}
+
+// buildFetchCallLog creates a JSON string for API call history logging.
+func buildFetchCallLog(categoryID uint, count int, order string, accountTypes []string, markAsUsed bool) string {
+	typesJSON, _ := json.Marshal(accountTypes)
+	return fmt.Sprintf(`{"category_id":%d,"count":%d,"order":"%s","account_type":%s,"mark_as_used":%t}`,
+		categoryID, count, order, string(typesJSON), markAsUsed)
 }
 
 func UpdateAccount(c *gin.Context) {

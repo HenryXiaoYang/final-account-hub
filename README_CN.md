@@ -243,7 +243,7 @@ GET /api/accounts/:category_id?page=1&limit=100
 
 按 ID 排序。页码自动限制在有效范围内。limit 范围：1-1000，默认 100。
 
-#### 获取账号（原子操作）
+#### 获取账号
 
 ```
 POST /api/accounts/fetch
@@ -253,7 +253,37 @@ POST /api/accounts/fetch
 {"category_id": 1, "count": 5}
 ```
 
-响应 (200)：账号对象数组。选中的账号在数据库事务中被原子性地标记为 `used`。count 范围：1-1000。此端点会记录到 API 调用历史。
+| 字段 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `category_id` | number | *（必填）* | 目标分类 ID |
+| `count` | number | *（必填）* | 获取账号数量（1-1000） |
+| `order` | string | `"sequential"` | `"sequential"`（按 ID 升序）或 `"random"`（随机） |
+| `account_type` | string \| string[] | `"available"` | 账号状态过滤。单个字符串或数组：`"available"`、`"used"`、`"banned"` |
+| `mark_as_used` | boolean | `true` | 是否将获取的账号标记为已用 |
+| `created_after` | string | -- | RFC 3339 时间戳，筛选此时间之后创建的账号 |
+| `created_before` | string | -- | RFC 3339 时间戳，筛选此时间之前创建的账号 |
+| `updated_after` | string | -- | RFC 3339 时间戳，筛选此时间之后更新的账号 |
+| `updated_before` | string | -- | RFC 3339 时间戳，筛选此时间之前更新的账号 |
+
+响应 (200)：账号对象数组。当 `mark_as_used` 为 true（默认）时，选中的账号在数据库事务中被原子性地标记为 `used`。此端点会记录到 API 调用历史。
+
+账号类型说明：
+- `"available"` -- 未使用且未封禁（`used=false, banned=false`）
+- `"used"` -- 已使用但未封禁（`used=true, banned=false`）
+- `"banned"` -- 已封禁，不论使用状态（`banned=true`）
+
+示例：
+
+```json
+// 随机获取 5 个可用账号（默认行为，向后兼容）
+{"category_id": 1, "count": 5, "order": "random"}
+
+// 获取已用账号，不标记状态
+{"category_id": 1, "count": 10, "account_type": "used", "mark_as_used": false}
+
+// 获取最近 24 小时内创建的可用或已用账号
+{"category_id": 1, "count": 20, "account_type": ["available", "used"], "created_after": "2025-01-01T00:00:00Z"}
+```
 
 #### 更新账号
 

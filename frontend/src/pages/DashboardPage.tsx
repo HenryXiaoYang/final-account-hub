@@ -279,6 +279,21 @@ export default function DashboardPage() {
   -H "Content-Type: application/json" \\
   -d '{"category_id": 1, "count": 1}'`}
               response={`[{"id":1,"category_id":1,"used":true,"banned":false,"data":"...","created_at":"...","updated_at":"..."}]`} />
+            <ApiExample title={t('api.fetchAccountRandom')} code={`curl -X POST ${baseUrl}/api/accounts/fetch \\
+  -H "X-Passkey: YOUR_PASSKEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"category_id": 1, "count": 5, "order": "random"}'`}
+              response={`[{"id":42,"category_id":1,"used":true,"banned":false,"data":"...","created_at":"...","updated_at":"..."},...]`} />
+            <ApiExample title={t('api.fetchAccountType')} code={`curl -X POST ${baseUrl}/api/accounts/fetch \\
+  -H "X-Passkey: YOUR_PASSKEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"category_id": 1, "count": 10, "account_type": ["available", "used"], "mark_as_used": false}'`}
+              response={`[{"id":1,"category_id":1,"used":false,"banned":false,"data":"...","created_at":"...","updated_at":"..."},...]`} />
+            <ApiExample title={t('api.fetchAccountTime')} code={`curl -X POST ${baseUrl}/api/accounts/fetch \\
+  -H "X-Passkey: YOUR_PASSKEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"category_id": 1, "count": 20, "account_type": "available", "order": "random", "created_after": "2025-01-01T00:00:00Z", "updated_before": "2025-06-01T00:00:00Z"}'`}
+              response={`[{"id":7,"category_id":1,"used":true,"banned":false,"data":"...","created_at":"2025-03-15T10:00:00Z","updated_at":"2025-03-15T10:00:00Z"},...]`} />
             <ApiExample title={t('api.updateAccountData')} code={`curl -X PUT ${baseUrl}/api/accounts/1 \\
   -H "X-Passkey: YOUR_PASSKEY" \\
   -H "Content-Type: application/json" \\

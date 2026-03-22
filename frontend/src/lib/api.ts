@@ -57,8 +57,19 @@ export const addAccountsBulk = (category_id: number, data: string[]) =>
   api.post('/accounts/bulk', { category_id, data })
 export const getAccounts = (category_id: number | string, page = 1, limit = 100, signal?: AbortSignal) =>
   api.get(`/accounts/${category_id}?page=${page}&limit=${limit}`, { signal })
-export const fetchAccounts = (category_id: number, count: number) =>
-  api.post('/accounts/fetch', { category_id, count })
+export interface FetchAccountsParams {
+  category_id: number
+  count: number
+  order?: 'sequential' | 'random'
+  account_type?: string | string[]
+  mark_as_used?: boolean
+  created_after?: string
+  created_before?: string
+  updated_after?: string
+  updated_before?: string
+}
+export const fetchAccounts = (params: FetchAccountsParams) =>
+  api.post('/accounts/fetch', params)
 export const updateAccount = (id: number, fields: { data?: string; used?: boolean; banned?: boolean }) =>
   api.put(`/accounts/${id}`, fields)
 export const batchUpdateAccounts = (ids: number[], status: Record<string, boolean>) =>

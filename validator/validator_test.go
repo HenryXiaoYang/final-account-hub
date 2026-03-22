@@ -1,6 +1,7 @@
 package validator
 
 import (
+	"strings"
 	"testing"
 
 	"final-account-hub/database"
@@ -112,5 +113,109 @@ func TestRunValidationNow_NoScript(t *testing.T) {
 	}
 	if err.Error() != "no validation script" {
 		t.Errorf("unexpected error message: %s", err.Error())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// splitIntoBatches (pure function)
+// ---------------------------------------------------------------------------
+
+func TestSplitIntoBatches_EvenSplit(t *testing.T) {
+	accounts := make([]database.Account, 100)
+	for i := range accounts {
+		accounts[i] = database.Account{ID: uint(i + 1)}
+	}
+	batches := splitIntoBatches(accounts, 50)
+	if len(batches) != 2 {
+		t.Fatalf("expected 2 batches, got %d", len(batches))
+	}
+	if len(batches[0]) != 50 || len(batches[1]) != 50 {
+		t.Errorf("expected 50+50, got %d+%d", len(batches[0]), len(batches[1]))
+	}
+}
+
+func TestSplitIntoBatches_Remainder(t *testing.T) {
+	accounts := make([]database.Account, 75)
+	for i := range accounts {
+		accounts[i] = database.Account{ID: uint(i + 1)}
+	}
+	batches := splitIntoBatches(accounts, 50)
+	if len(batches) != 2 {
+		t.Fatalf("expected 2 batches, got %d", len(batches))
+	}
+	if len(batches[0]) != 50 || len(batches[1]) != 25 {
+		t.Errorf("expected 50+25, got %d+%d", len(batches[0]), len(batches[1]))
+	}
+}
+
+func TestSplitIntoBatches_Empty(t *testing.T) {
+	batches := splitIntoBatches(nil, 50)
+	if len(batches) != 0 {
+		t.Fatalf("expected 0 batches for empty input, got %d", len(batches))
+	}
+}
+
+func TestSplitIntoBatches_SizeLargerThanInput(t *testing.T) {
+	accounts := make([]database.Account, 3)
+	for i := range accounts {
+		accounts[i] = database.Account{ID: uint(i + 1)}
+	}
+	batches := splitIntoBatches(accounts, 100)
+	if len(batches) != 1 {
+		t.Fatalf("expected 1 batch, got %d", len(batches))
+	}
+	if len(batches[0]) != 3 {
+		t.Errorf("expected batch of 3, got %d", len(batches[0]))
+	}
+}
+
+func TestSplitIntoBatches_ZeroSize(t *testing.T) {
+	accounts := make([]database.Account, 10)
+	batches := splitIntoBatches(accounts, 0)
+	// Should fall back to defaultBatchSize (50), so 10 items → 1 batch
+	if len(batches) != 1 {
+		t.Fatalf("expected 1 batch for size=0 fallback, got %d", len(batches))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// buildBatchScript (pure function)
+// ---------------------------------------------------------------------------
+
+func TestBuildBatchScript_ContainsUserScript(t *testing.T) {
+	userScript := "def validate(data):\n    return (False, False)"
+	script := buildBatchScript(userScript)
+
+	if !strings.Contains(script, userScript) {
+		t.Error("batch script should contain the user's validation script verbatim")
+	}
+}
+
+func TestBuildBatchScript_ContainsBatchHarness(t *testing.T) {
+	script := buildBatchScript("def validate(data): return (False, False)")
+
+	checks := []string{
+		"import json, sys",
+		"_accounts = json.load",
+		"sys.argv[1]",
+		"_used, _banned = validate(_acc[\"data\"])",
+		"---BATCH_RESULT---",
+		"json.dumps(_results)",
+	}
+	for _, check := range checks {
+		if !strings.Contains(script, check) {
+			t.Errorf("batch script missing expected content: %q", check)
+		}
+	}
+}
+
+func TestBuildBatchScript_ErrorHandling(t *testing.T) {
+	script := buildBatchScript("def validate(data): return (False, False)")
+
+	if !strings.Contains(script, "except Exception as _e") {
+		t.Error("batch script should include per-account error handling")
+	}
+	if !strings.Contains(script, `"error": str(_e)`) {
+		t.Error("batch script should capture error messages in results")
 	}
 }

@@ -2,6 +2,7 @@ package validator
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -15,6 +16,22 @@ import (
 
 	"github.com/robfig/cron/v3"
 )
+
+const defaultBatchSize = 50
+
+// batchResult represents the JSON output from a batch validation script for one account.
+type batchResult struct {
+	ID     uint   `json:"id"`
+	Used   bool   `json:"used"`
+	Banned bool   `json:"banned"`
+	Error  string `json:"error,omitempty"`
+}
+
+// batchInputItem is the JSON input format for each account in a batch.
+type batchInputItem struct {
+	ID   uint   `json:"id"`
+	Data string `json:"data"`
+}
 
 var cronScheduler *cron.Cron
 var categoryJobs = make(map[uint]cron.EntryID)
@@ -190,13 +207,35 @@ func validateCategory(cat database.Category) {
 		}
 	}()
 
-	appendLog(fmt.Sprintf("[%s] Starting validation for %d accounts", time.Now().Format("15:04:05"), len(accounts)))
+	// Split accounts into batches for efficient Python execution
+	batches := splitIntoBatches(accounts, defaultBatchSize)
+	appendLog(fmt.Sprintf("[%s] Starting validation for %d accounts in %d batches (batch size: %d)",
+		time.Now().Format("15:04:05"), len(accounts), len(batches), defaultBatchSize))
+
+	// Create a single shared script file for the entire validation run
+	scriptContent := buildBatchScript(cat.ValidationScript)
+	scriptFile, err := os.CreateTemp("", "validate-batch-*.py")
+	if err != nil {
+		appendLog(fmt.Sprintf("[%s] ERROR creating script file: %v", time.Now().Format("15:04:05"), err))
+		return
+	}
+	scriptFile.WriteString(scriptContent)
+	scriptFile.Close()
+	defer os.Remove(scriptFile.Name())
+
+	// Determine Python executable
+	venvPython := fmt.Sprintf("./data/venvs/%d/bin/python", cat.ID)
+	useVenv := false
+	if _, err := os.Stat(venvPython); err == nil {
+		useVenv = true
+	}
 
 	workerSlots := make(chan int, concurrency)
 	for i := 1; i <= concurrency; i++ {
 		workerSlots <- i
 	}
-	for _, acc := range accounts {
+
+	for batchIdx, batch := range batches {
 		select {
 		case <-ctx.Done():
 			stopped = true
@@ -206,7 +245,7 @@ func validateCategory(cat database.Category) {
 		}
 		wg.Add(1)
 		worker := <-workerSlots
-		go func(acc database.Account, worker int) {
+		go func(batch []database.Account, batchIdx, worker int) {
 			defer func() {
 				if r := recover(); r != nil {
 					logger.Error.Printf("validator worker panic: %v", r)
@@ -214,68 +253,125 @@ func validateCategory(cat database.Category) {
 			}()
 			defer func() { workerSlots <- worker }()
 			defer wg.Done()
-			defer func() {
-				atomic.AddInt32(&processedCount, 1)
-				database.DB.Model(&run).Update("processed_count", atomic.LoadInt32(&processedCount))
-			}()
 
-			script := fmt.Sprintf(`# /// script
-# requires-python = ">=3.11"
-# ///
-%s
-used, banned = validate(%q)
-print(used)
-print(banned)
-`, cat.ValidationScript, acc.Data)
-
-			tmpFile, err := os.CreateTemp("", "validate-*.py")
+			// Write batch data to a temp JSON file
+			items := make([]batchInputItem, len(batch))
+			for i, acc := range batch {
+				items[i] = batchInputItem{ID: acc.ID, Data: acc.Data}
+			}
+			dataJSON, err := json.Marshal(items)
 			if err != nil {
-				appendLog(fmt.Sprintf("[%s] ERROR creating temp file for account %d: %v", time.Now().Format("15:04:05"), acc.ID, err))
+				appendLog(fmt.Sprintf("[%s] [W%d] Batch %d: ERROR marshaling data: %v",
+					time.Now().Format("15:04:05"), worker, batchIdx+1, err))
 				return
 			}
-			tmpPath := tmpFile.Name()
-			defer os.Remove(tmpPath)
-			tmpFile.WriteString(script)
-			tmpFile.Close()
+			dataFile, err := os.CreateTemp("", "validate-data-*.json")
+			if err != nil {
+				appendLog(fmt.Sprintf("[%s] [W%d] Batch %d: ERROR creating data file: %v",
+					time.Now().Format("15:04:05"), worker, batchIdx+1, err))
+				return
+			}
+			dataFile.Write(dataJSON)
+			dataFile.Close()
+			defer os.Remove(dataFile.Name())
 
-			ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-			defer cancel()
+			// Dynamic timeout: base 60s + 2s per account, capped at 300s
+			timeout := time.Duration(60+len(batch)*2) * time.Second
+			if timeout > 300*time.Second {
+				timeout = 300 * time.Second
+			}
+			execCtx, execCancel := context.WithTimeout(ctx, timeout)
+			defer execCancel()
 
-			venvPython := fmt.Sprintf("./data/venvs/%d/bin/python", cat.ID)
 			var cmd *exec.Cmd
-			if _, err := os.Stat(venvPython); err == nil {
-				cmd = exec.CommandContext(ctx, venvPython, tmpPath)
+			if useVenv {
+				cmd = exec.CommandContext(execCtx, venvPython, scriptFile.Name(), dataFile.Name())
 			} else {
-				cmd = exec.CommandContext(ctx, "uv", "run", "--isolated", "--no-project", tmpPath)
+				cmd = exec.CommandContext(execCtx, "uv", "run", "--isolated", "--no-project", scriptFile.Name(), dataFile.Name())
 			}
 			output, err := cmd.CombinedOutput()
 			outputStr := strings.TrimSpace(string(output))
 			if err != nil {
-				appendLog(fmt.Sprintf("[%s] [W%d] Account %d: ERROR - %s", time.Now().Format("15:04:05"), worker, acc.ID, outputStr))
+				appendLog(fmt.Sprintf("[%s] [W%d] Batch %d: ERROR - %s",
+					time.Now().Format("15:04:05"), worker, batchIdx+1, outputStr))
+				// Count the batch as processed even on error
+				newCount := atomic.AddInt32(&processedCount, int32(len(batch)))
+				database.DB.Model(&run).Update("processed_count", int(newCount))
 				return
 			}
 
-			lines := strings.Split(outputStr, "\n")
-			if len(lines) >= 2 {
-				// Last two lines are used/banned, everything before is script output
-				scriptOutput := strings.Join(lines[:len(lines)-2], "\n")
-				if scriptOutput != "" {
-					appendLog(fmt.Sprintf("[%s] [W%d] Account %d: %s", time.Now().Format("15:04:05"), worker, acc.ID, scriptOutput))
-				}
-				used := lines[len(lines)-2] == "True"
-				banned := lines[len(lines)-1] == "True"
-				database.DB.Model(&acc).Updates(map[string]interface{}{"used": used, "banned": banned})
-				status := "OK"
-				if banned {
-					atomic.AddInt32(&bannedCount, 1)
-					status = "BANNED"
-				} else if used {
-					atomic.AddInt32(&usedCount, 1)
-					status = "USED"
-				}
-				appendLog(fmt.Sprintf("[%s] [W%d] Account %d: %s", time.Now().Format("15:04:05"), worker, acc.ID, status))
+			// Parse output: everything before "---BATCH_RESULT---" is script output,
+			// the line after is JSON results
+			var results []batchResult
+			sentinel := "---BATCH_RESULT---"
+			sentinelIdx := strings.LastIndex(outputStr, sentinel)
+			if sentinelIdx < 0 {
+				appendLog(fmt.Sprintf("[%s] [W%d] Batch %d: ERROR - no result sentinel found in output: %s",
+					time.Now().Format("15:04:05"), worker, batchIdx+1, outputStr))
+				newCount := atomic.AddInt32(&processedCount, int32(len(batch)))
+				database.DB.Model(&run).Update("processed_count", int(newCount))
+				return
 			}
-		}(acc, worker)
+
+			// Log any script output before the sentinel
+			scriptOutput := strings.TrimSpace(outputStr[:sentinelIdx])
+			if scriptOutput != "" {
+				appendLog(fmt.Sprintf("[%s] [W%d] Batch %d output: %s",
+					time.Now().Format("15:04:05"), worker, batchIdx+1, scriptOutput))
+			}
+
+			resultJSON := strings.TrimSpace(outputStr[sentinelIdx+len(sentinel):])
+			if err := json.Unmarshal([]byte(resultJSON), &results); err != nil {
+				appendLog(fmt.Sprintf("[%s] [W%d] Batch %d: ERROR parsing results: %v",
+					time.Now().Format("15:04:05"), worker, batchIdx+1, err))
+				newCount := atomic.AddInt32(&processedCount, int32(len(batch)))
+				database.DB.Model(&run).Update("processed_count", int(newCount))
+				return
+			}
+
+			// Process results: batch DB updates by status group
+			var okIDs, usedIDs, bannedIDs []uint
+			for _, r := range results {
+				if r.Error != "" {
+					appendLog(fmt.Sprintf("[%s] [W%d] Account %d: ERROR - %s",
+						time.Now().Format("15:04:05"), worker, r.ID, r.Error))
+					continue
+				}
+				if r.Banned {
+					bannedIDs = append(bannedIDs, r.ID)
+					atomic.AddInt32(&bannedCount, 1)
+					appendLog(fmt.Sprintf("[%s] [W%d] Account %d: BANNED",
+						time.Now().Format("15:04:05"), worker, r.ID))
+				} else if r.Used {
+					usedIDs = append(usedIDs, r.ID)
+					atomic.AddInt32(&usedCount, 1)
+					appendLog(fmt.Sprintf("[%s] [W%d] Account %d: USED",
+						time.Now().Format("15:04:05"), worker, r.ID))
+				} else {
+					okIDs = append(okIDs, r.ID)
+					appendLog(fmt.Sprintf("[%s] [W%d] Account %d: OK",
+						time.Now().Format("15:04:05"), worker, r.ID))
+				}
+			}
+
+			// Batch DB updates — one UPDATE per status group instead of per account
+			if len(okIDs) > 0 {
+				database.DB.Model(&database.Account{}).Where("id IN ?", okIDs).
+					Updates(map[string]interface{}{"used": false, "banned": false})
+			}
+			if len(usedIDs) > 0 {
+				database.DB.Model(&database.Account{}).Where("id IN ?", usedIDs).
+					Updates(map[string]interface{}{"used": true, "banned": false})
+			}
+			if len(bannedIDs) > 0 {
+				database.DB.Model(&database.Account{}).Where("id IN ?", bannedIDs).
+					Updates(map[string]interface{}{"used": false, "banned": true})
+			}
+
+			// Update progress once per batch
+			newCount := atomic.AddInt32(&processedCount, int32(len(batch)))
+			database.DB.Model(&run).Update("processed_count", int(newCount))
+		}(batch, batchIdx, worker)
 	}
 
 done:
@@ -346,6 +442,47 @@ func buildScopeConditions(scope string) string {
 		return "1=0" // No valid scope — match nothing
 	}
 	return strings.Join(conditions, " OR ")
+}
+
+// buildBatchScript generates a Python script that calls the user's validate() function
+// for each account in a JSON input file and outputs structured JSON results.
+// The user's validation script is embedded unchanged — only the harness around it changes.
+func buildBatchScript(validationScript string) string {
+	return fmt.Sprintf(`# /// script
+# requires-python = ">=3.11"
+# ///
+import json, sys
+
+%s
+
+with open(sys.argv[1]) as _f:
+    _accounts = json.load(_f)
+_results = []
+for _acc in _accounts:
+    try:
+        _used, _banned = validate(_acc["data"])
+        _results.append({"id": _acc["id"], "used": bool(_used), "banned": bool(_banned)})
+    except Exception as _e:
+        _results.append({"id": _acc["id"], "error": str(_e)})
+print("---BATCH_RESULT---")
+print(json.dumps(_results))
+`, validationScript)
+}
+
+// splitIntoBatches divides a slice of accounts into chunks of the given size.
+func splitIntoBatches(accounts []database.Account, size int) [][]database.Account {
+	if size <= 0 {
+		size = defaultBatchSize
+	}
+	var batches [][]database.Account
+	for i := 0; i < len(accounts); i += size {
+		end := i + size
+		if end > len(accounts) {
+			end = len(accounts)
+		}
+		batches = append(batches, accounts[i:end])
+	}
+	return batches
 }
 
 func RunValidationNow(categoryID uint) error {

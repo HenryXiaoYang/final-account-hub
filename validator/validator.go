@@ -389,3 +389,11 @@ func StopScheduler() {
 		cronScheduler.Stop()
 	}
 }
+
+// InitSchedulerForTest initializes the cron scheduler without starting
+// background snapshot jobs. Use in tests where handlers call
+// ReloadJobForCategory and the scheduler must be non-nil.
+func InitSchedulerForTest() {
+	cronScheduler = cron.New()
+	cronScheduler.Start()
+}

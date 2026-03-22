@@ -17,7 +17,7 @@ func TestRecordAPICall_CreatesRecord(t *testing.T) {
 	testutil.SetupTestDB(t)
 	cat := testutil.SeedCategory(t, "record-test")
 
-	RecordAPICall(cat.ID, "/api/accounts/fetch", "POST", "{}", "10.0.0.1", 200)
+	RecordAPICall(cat.ID, "/api/accounts/fetch", "POST", "10.0.0.1", 200)
 
 	var count int64
 	database.DB.Model(&database.APICallHistory{}).Where("category_id = ?", cat.ID).Count(&count)
@@ -33,7 +33,7 @@ func TestRecordAPICall_TrimsOldRecords(t *testing.T) {
 	database.DB.Model(&cat).Update("api_history_limit", 3)
 
 	for i := 0; i < 5; i++ {
-		RecordAPICall(cat.ID, fmt.Sprintf("/ep/%d", i), "GET", "", "1.2.3.4", 200)
+		RecordAPICall(cat.ID, fmt.Sprintf("/ep/%d", i), "GET", "1.2.3.4", 200)
 	}
 
 	var count int64
@@ -46,7 +46,7 @@ func TestRecordAPICall_TrimsOldRecords(t *testing.T) {
 func TestRecordAPICall_NonExistentCategory(t *testing.T) {
 	testutil.SetupTestDB(t)
 	// Should silently return without creating a record.
-	RecordAPICall(99999, "/nope", "GET", "", "1.1.1.1", 200)
+	RecordAPICall(99999, "/nope", "GET", "1.1.1.1", 200)
 
 	var count int64
 	database.DB.Model(&database.APICallHistory{}).Count(&count)

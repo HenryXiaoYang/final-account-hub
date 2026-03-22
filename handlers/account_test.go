@@ -1621,39 +1621,6 @@ func TestParseTimeFilters_AllFour(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// buildFetchCallLog tests
-// ---------------------------------------------------------------------------
-
-func TestBuildFetchCallLog(t *testing.T) {
-	result := buildFetchCallLog(1, 10, "sequential", []string{"available"}, true)
-	if !strings.Contains(result, `"category_id":1`) {
-		t.Errorf("expected category_id in log, got: %s", result)
-	}
-	if !strings.Contains(result, `"count":10`) {
-		t.Errorf("expected count in log, got: %s", result)
-	}
-	if !strings.Contains(result, `"order":"sequential"`) {
-		t.Errorf("expected order in log, got: %s", result)
-	}
-	if !strings.Contains(result, `"mark_as_used":true`) {
-		t.Errorf("expected mark_as_used in log, got: %s", result)
-	}
-	if !strings.Contains(result, `["available"]`) {
-		t.Errorf("expected account_type array in log, got: %s", result)
-	}
-}
-
-func TestBuildFetchCallLog_MultipleTypes(t *testing.T) {
-	result := buildFetchCallLog(5, 100, "random", []string{"used", "banned"}, false)
-	if !strings.Contains(result, `"mark_as_used":false`) {
-		t.Errorf("expected mark_as_used false, got: %s", result)
-	}
-	if !strings.Contains(result, `["used","banned"]`) {
-		t.Errorf("expected multi-type array, got: %s", result)
-	}
-}
-
-// ---------------------------------------------------------------------------
 // applyAccountTypeFilter tests
 // ---------------------------------------------------------------------------
 

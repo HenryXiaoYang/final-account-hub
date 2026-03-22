@@ -14,7 +14,7 @@ import (
 
 // RecordAPICall persists an API call record and trims old entries beyond the
 // category's api_history_limit. Called asynchronously via goroutine.
-func RecordAPICall(categoryID uint, endpoint, method, request, requestIP string, statusCode int) {
+func RecordAPICall(categoryID uint, endpoint, method, requestIP string, statusCode int) {
 	var category database.Category
 	if database.DB.First(&category, categoryID).Error != nil {
 		return
@@ -24,7 +24,6 @@ func RecordAPICall(categoryID uint, endpoint, method, request, requestIP string,
 		CategoryID: categoryID,
 		Endpoint:   endpoint,
 		Method:     method,
-		Request:    request,
 		RequestIP:  requestIP,
 		StatusCode: statusCode,
 	})

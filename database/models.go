@@ -10,7 +10,7 @@ type Category struct {
 	ValidationCron        string     `gorm:"size:50;default:'0 0 * * *'" json:"validation_cron"`
 	ValidationHistoryLimit int        `gorm:"default:50" json:"validation_history_limit"`
 	ApiHistoryLimit        int        `gorm:"default:1000" json:"api_history_limit"`
-	ValidationEnabled     bool       `gorm:"default:true" json:"validation_enabled"`
+	ValidationEnabled     bool       `gorm:"default:false" json:"validation_enabled"`
 	ValidationScope       string     `gorm:"size:50;default:'available,used'" json:"validation_scope"`
 	LastValidatedAt       *time.Time `gorm:"index" json:"last_validated_at"`
 	CreatedAt             time.Time  `gorm:"index" json:"created_at"`
@@ -49,7 +49,6 @@ type APICallHistory struct {
 	Category   Category  `gorm:"foreignKey:CategoryID;constraint:OnDelete:CASCADE" json:"-"`
 	Endpoint   string    `gorm:"size:255;not null" json:"endpoint"`
 	Method     string    `gorm:"size:10;not null" json:"method"`
-	Request    string    `gorm:"type:text" json:"request"`
 	RequestIP  string    `gorm:"size:45" json:"request_ip"`
 	StatusCode int       `json:"status_code"`
 	CreatedAt  time.Time `gorm:"index:idx_history_category_time" json:"created_at"`

@@ -20,7 +20,6 @@ interface HistoryItem {
   method: string
   endpoint: string
   status_code: number
-  request: string
   request_ip: string
 }
 
@@ -206,13 +205,12 @@ export function ApiTab({ categoryId, historyLimit: initialLimit }: Props) {
                   <th className="p-2.5 text-left font-medium text-[var(--muted-foreground)] w-16">{t('api.method')}</th>
                   <th className="p-2.5 text-left font-medium text-[var(--muted-foreground)]">{t('api.endpoint')}</th>
                   <th className="p-2.5 text-left font-medium text-[var(--muted-foreground)] w-16">{t('common.status')}</th>
-                  <th className="p-2.5 text-left font-medium text-[var(--muted-foreground)]">{t('api.request')}</th>
                   <th className="p-2.5 text-left font-medium text-[var(--muted-foreground)]">{t('api.requestIp')}</th>
                 </tr>
               </thead>
               <tbody>
                 {history.length === 0 ? (
-                  <tr><td colSpan={7} className="p-6 text-center text-sm text-[var(--muted-foreground)]">{t('api.noHistory')}</td></tr>
+                  <tr><td colSpan={6} className="p-6 text-center text-sm text-[var(--muted-foreground)]">{t('api.noHistory')}</td></tr>
                 ) : history.map((item) => (
                   <tr key={item.id} className="border-b border-[var(--border)] hover:bg-[var(--muted)] transition-colors">
                     <td className="p-2.5">
@@ -222,7 +220,6 @@ export function ApiTab({ categoryId, historyLimit: initialLimit }: Props) {
                     <td className="p-2.5"><Badge variant="secondary">{item.method}</Badge></td>
                     <td className="p-2.5 font-mono text-xs truncate max-w-[200px]">{item.endpoint}</td>
                     <td className="p-2.5"><Badge variant={item.status_code < 400 ? 'success' : 'danger'}>{item.status_code}</Badge></td>
-                    <td className="p-2.5 max-w-[200px]"><code className="text-xs break-all">{item.request}</code></td>
                     <td className="p-2.5"><code className="text-xs">{item.request_ip}</code></td>
                   </tr>
                 ))}

@@ -129,7 +129,6 @@ func SeedAPICallHistory(t *testing.T, categoryID uint, endpoint string) database
 		CategoryID: categoryID,
 		Endpoint:   endpoint,
 		Method:     "POST",
-		Request:    "{}",
 		RequestIP:  "127.0.0.1",
 		StatusCode: 200,
 	}

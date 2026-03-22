@@ -223,10 +223,10 @@ func FetchAccounts(c *gin.Context) {
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		go RecordAPICall(req.CategoryID, "/api/accounts/fetch", "POST", buildFetchCallLog(req.CategoryID, req.Count, order, accountTypes, markAsUsed), c.ClientIP(), 500)
+		go RecordAPICall(req.CategoryID, "/api/accounts/fetch", "POST", c.ClientIP(), 500)
 		return
 	}
-	go RecordAPICall(req.CategoryID, "/api/accounts/fetch", "POST", buildFetchCallLog(req.CategoryID, req.Count, order, accountTypes, markAsUsed), c.ClientIP(), 200)
+	go RecordAPICall(req.CategoryID, "/api/accounts/fetch", "POST", c.ClientIP(), 200)
 	c.JSON(http.StatusOK, accounts)
 }
 
@@ -335,13 +335,6 @@ func parseTimeFilters(createdAfter, createdBefore, updatedAfter, updatedBefore *
 	}
 
 	return filters, nil
-}
-
-// buildFetchCallLog creates a JSON string for API call history logging.
-func buildFetchCallLog(categoryID uint, count int, order string, accountTypes []string, markAsUsed bool) string {
-	typesJSON, _ := json.Marshal(accountTypes)
-	return fmt.Sprintf(`{"category_id":%d,"count":%d,"order":"%s","account_type":%s,"mark_as_used":%t}`,
-		categoryID, count, order, string(typesJSON), markAsUsed)
 }
 
 func UpdateAccount(c *gin.Context) {

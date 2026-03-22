@@ -60,6 +60,13 @@ func AddAccountsBulk(c *gin.Context) {
 		return
 	}
 
+	// Verify category exists before inserting
+	var cat database.Category
+	if err := database.DB.First(&cat, req.CategoryID).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "category not found"})
+		return
+	}
+
 	var existingData []string
 	database.DB.Model(&database.Account{}).Where("category_id = ? AND data IN ?", req.CategoryID, req.Data).Pluck("data", &existingData)
 	existingSet := make(map[string]bool)
@@ -77,7 +84,13 @@ func AddAccountsBulk(c *gin.Context) {
 
 	if len(accounts) > 0 {
 		if err := database.DB.Create(&accounts).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			// Handle unique constraint violations from concurrent requests
+			errMsg := err.Error()
+			if strings.Contains(errMsg, "UNIQUE constraint") || strings.Contains(errMsg, "duplicate key") {
+				c.JSON(http.StatusConflict, gin.H{"error": "some accounts already exist (concurrent write)", "details": errMsg})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": errMsg})
 			return
 		}
 	}

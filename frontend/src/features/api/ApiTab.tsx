@@ -104,11 +104,21 @@ export function ApiTab({ categoryId, historyLimit: initialLimit }: Props) {
       <div>
         <h3 className="text-sm font-semibold mb-2">{t('api.examples')}</h3>
         <div className="flex flex-col gap-3">
+          <ApiExample title={t('api.createCategory')} code={`curl -X POST ${baseUrl}/api/categories/ensure \\
+  -H "X-Passkey: YOUR_PASSKEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"name": "my-category"}'`}
+            response={`{"id":${categoryId},"name":"my-category","created_at":"...","updated_at":"..."}`} />
           <ApiExample title={t('api.addAccount')} code={`curl -X POST ${baseUrl}/api/accounts \\
   -H "X-Passkey: YOUR_PASSKEY" \\
   -H "Content-Type: application/json" \\
   -d '{"category_id": ${categoryId}, "data": "{\\"username\\": \\"user\\", \\"password\\": \\"pass\\"}"}'`}
             response={`{"id":1,"category_id":${categoryId},"used":false,"banned":false,"data":"{\\"username\\":\\"user\\",\\"password\\":\\"pass\\"}","created_at":"...","updated_at":"..."}`} />
+          <ApiExample title={t('api.addAccountsBulk')} code={`curl -X POST ${baseUrl}/api/accounts/bulk \\
+  -H "X-Passkey: YOUR_PASSKEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"category_id": ${categoryId}, "data": ["account1", "account2"]}'`}
+            response={`{"count":2,"skipped":0}`} />
           <ApiExample title={t('api.getAccount')} code={`curl -X POST ${baseUrl}/api/accounts/fetch \\
   -H "X-Passkey: YOUR_PASSKEY" \\
   -H "Content-Type: application/json" \\
@@ -139,6 +149,14 @@ export function ApiTab({ categoryId, historyLimit: initialLimit }: Props) {
   -H "Content-Type: application/json" \\
   -d '{"ids": [1, 2, 3], "banned": true}'`}
             response={`{"message":"updated"}`} />
+          <ApiExample title={t('api.getAccounts')} code={`curl -X GET "${baseUrl}/api/accounts/${categoryId}?page=1&limit=20" \\
+  -H "X-Passkey: YOUR_PASSKEY"`}
+            response={`{"data":[{"id":1,"category_id":${categoryId},"data":"...","used":false,"banned":false,...}],"total":100,"page":1,"limit":20}`} />
+          <ApiExample title={t('api.deleteAccounts')} code={`curl -X DELETE "${baseUrl}/api/accounts" \\
+  -H "X-Passkey: YOUR_PASSKEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"category_id": ${categoryId}, "used": true}'`}
+            response={`event: done\ndata: {"deleted":5,"total":5}`} />
         </div>
       </div>
 

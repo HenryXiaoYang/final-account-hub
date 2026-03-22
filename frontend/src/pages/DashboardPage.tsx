@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, lazy, Suspense } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import { ChevronDown, FolderOpen, Activity, Zap } from 'lucide-react'
+import { FolderOpen, Activity, Zap } from 'lucide-react'
 import {
   BarChart, Bar, XAxis as BarXAxis, YAxis as BarYAxis, CartesianGrid as BarGrid,
   Tooltip as BarTooltip, ResponsiveContainer as BarContainer, Legend,
@@ -47,7 +47,6 @@ export default function DashboardPage() {
   })
   const [chartRows, setChartRows] = useState<ChartRow[]>([])
   const [granularity, setGranularity] = useState<Granularity>('1d')
-  const [apiOpen, setApiOpen] = useState(false)
   const [categories, setCategories] = useState<CategoryOverview[]>([])
   const [recentRuns, setRecentRuns] = useState<RecentRun[]>([])
   const [frequency, setFrequency] = useState<FrequencyPoint[]>([])
@@ -87,7 +86,6 @@ export default function DashboardPage() {
     return () => document.removeEventListener('visibilitychange', onVisibilityChange)
   }, [loadStats, loadSnapshots, loadCategories, loadRecentRuns, loadFrequency])
 
-  const baseUrl = window.location.origin
   const chartLabel = t('dashboard.available')
   const granularityOptions: { value: Granularity; label: string }[] = [
     { value: '1h', label: t('dashboard.hourly') },
@@ -248,89 +246,6 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
-
-      {/* API Reference — collapsible */}
-      <div>
-        <button onClick={() => setApiOpen(!apiOpen)}
-          className="flex items-center gap-1.5 text-sm font-semibold hover:text-[var(--primary)] transition-colors w-full text-left"
-        >
-          <ChevronDown className={`h-3.5 w-3.5 transition-transform ${apiOpen ? '' : '-rotate-90'}`} />
-          {t('dashboard.apiReference')}
-        </button>
-        {apiOpen && (
-          <div className="flex flex-col gap-3 mt-3">
-            <ApiExample title={t('api.createCategory')} code={`curl -X POST ${baseUrl}/api/categories/ensure \\
-  -H "X-Passkey: YOUR_PASSKEY" \\
-  -H "Content-Type: application/json" \\
-  -d '{"name": "my-category"}'`}
-              response={`{"id":1,"name":"my-category","created_at":"...","updated_at":"..."}`} />
-            <ApiExample title={t('api.addAccount')} code={`curl -X POST ${baseUrl}/api/accounts \\
-  -H "X-Passkey: YOUR_PASSKEY" \\
-  -H "Content-Type: application/json" \\
-  -d '{"category_id": 1, "data": "{\\"username\\": \\"user\\"}"}'`}
-              response={`{"id":1,"category_id":1,"used":false,"banned":false,"data":"...","created_at":"...","updated_at":"..."}`} />
-            <ApiExample title={t('api.addAccountsBulk')} code={`curl -X POST ${baseUrl}/api/accounts/bulk \\
-  -H "X-Passkey: YOUR_PASSKEY" \\
-  -H "Content-Type: application/json" \\
-  -d '{"category_id": 1, "data": ["account1", "account2"]}'`}
-              response={`{"count":2,"skipped":0}`} />
-            <ApiExample title={t('api.fetchAccount')} code={`curl -X POST ${baseUrl}/api/accounts/fetch \\
-  -H "X-Passkey: YOUR_PASSKEY" \\
-  -H "Content-Type: application/json" \\
-  -d '{"category_id": 1, "count": 1}'`}
-              response={`[{"id":1,"category_id":1,"used":true,"banned":false,"data":"...","created_at":"...","updated_at":"..."}]`} />
-            <ApiExample title={t('api.fetchAccountRandom')} code={`curl -X POST ${baseUrl}/api/accounts/fetch \\
-  -H "X-Passkey: YOUR_PASSKEY" \\
-  -H "Content-Type: application/json" \\
-  -d '{"category_id": 1, "count": 5, "order": "random"}'`}
-              response={`[{"id":42,"category_id":1,"used":true,"banned":false,"data":"...","created_at":"...","updated_at":"..."},...]`} />
-            <ApiExample title={t('api.fetchAccountType')} code={`curl -X POST ${baseUrl}/api/accounts/fetch \\
-  -H "X-Passkey: YOUR_PASSKEY" \\
-  -H "Content-Type: application/json" \\
-  -d '{"category_id": 1, "count": 10, "account_type": ["available", "used"], "mark_as_used": false}'`}
-              response={`[{"id":1,"category_id":1,"used":false,"banned":false,"data":"...","created_at":"...","updated_at":"..."},...]`} />
-            <ApiExample title={t('api.fetchAccountTime')} code={`curl -X POST ${baseUrl}/api/accounts/fetch \\
-  -H "X-Passkey: YOUR_PASSKEY" \\
-  -H "Content-Type: application/json" \\
-  -d '{"category_id": 1, "count": 20, "account_type": "available", "order": "random", "created_after": "2025-01-01T00:00:00Z", "updated_before": "2025-06-01T00:00:00Z"}'`}
-              response={`[{"id":7,"category_id":1,"used":true,"banned":false,"data":"...","created_at":"2025-03-15T10:00:00Z","updated_at":"2025-03-15T10:00:00Z"},...]`} />
-            <ApiExample title={t('api.updateAccountData')} code={`curl -X PUT ${baseUrl}/api/accounts/1 \\
-  -H "X-Passkey: YOUR_PASSKEY" \\
-  -H "Content-Type: application/json" \\
-  -d '{"data": "new_data", "banned": true}'`}
-              response={`{"id":1,"category_id":1,"used":false,"banned":true,"data":"new_data","created_at":"...","updated_at":"..."}`} />
-            <ApiExample title={t('api.markBanned')} code={`curl -X PUT ${baseUrl}/api/accounts/batch/update \\
-  -H "X-Passkey: YOUR_PASSKEY" \\
-  -H "Content-Type: application/json" \\
-  -d '{"ids": [1, 2, 3], "banned": true}'`}
-              response={`{"message":"updated"}`} />
-            <ApiExample title={t('api.getAccounts')} code={`curl -X GET "${baseUrl}/api/accounts/1?page=1&limit=20" \\
-  -H "X-Passkey: YOUR_PASSKEY"`}
-              response={`{"data":[{"id":1,"category_id":1,"data":"...","used":false,"banned":false,...}],"total":100,"page":1,"limit":20}`} />
-            <ApiExample title={t('api.deleteAccounts')} code={`curl -X DELETE "${baseUrl}/api/accounts" \\
-  -H "X-Passkey: YOUR_PASSKEY" \\
-  -H "Content-Type: application/json" \\
-  -d '{"category_id": 1, "used": true}'`}
-              response={`event: done\ndata: {"deleted":5,"total":5}`} />
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function ApiExample({ title, code, response }: { title: string; code: string; response?: string }) {
-  return (
-    <div>
-      <div className="text-xs font-medium text-[var(--muted-foreground)] mb-1">{title}</div>
-      <pre className="text-xs bg-[var(--muted)] p-3 rounded-lg overflow-x-auto font-mono leading-relaxed text-[var(--foreground)]">
-        <code>{code}</code>
-      </pre>
-      {response && (
-        <pre className="text-xs bg-[var(--muted)] p-2.5 mt-1 rounded-lg overflow-x-auto font-mono leading-relaxed text-[var(--muted-foreground)]">
-          <code><span className="text-[var(--success)]">→</span> {response}</code>
-        </pre>
-      )}
     </div>
   )
 }

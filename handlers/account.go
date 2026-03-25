@@ -84,13 +84,7 @@ func AddAccountsBulk(c *gin.Context) {
 
 	if len(accounts) > 0 {
 		if err := database.DB.Create(&accounts).Error; err != nil {
-			// Handle unique constraint violations from concurrent requests
-			errMsg := err.Error()
-			if strings.Contains(errMsg, "UNIQUE constraint") || strings.Contains(errMsg, "duplicate key") {
-				c.JSON(http.StatusConflict, gin.H{"error": "some accounts already exist (concurrent write)", "details": errMsg})
-				return
-			}
-			c.JSON(http.StatusInternalServerError, gin.H{"error": errMsg})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 	}

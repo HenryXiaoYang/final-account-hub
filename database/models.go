@@ -19,11 +19,11 @@ type Category struct {
 
 type Account struct {
 	ID         uint      `gorm:"primaryKey" json:"id"`
-	CategoryID uint      `gorm:"not null;index:idx_account_category_status,priority:1;index:idx_account_category_data,priority:1" json:"category_id"`
+	CategoryID uint      `gorm:"not null;index:idx_account_category_status,priority:1" json:"category_id"`
 	Category   Category  `gorm:"foreignKey:CategoryID;constraint:OnDelete:CASCADE" json:"-"`
 	Used       bool      `gorm:"default:false;index:idx_account_category_status,priority:2" json:"used"`
 	Banned     bool      `gorm:"default:false;index:idx_account_category_status,priority:3" json:"banned"`
-	Data       string    `gorm:"type:text;uniqueIndex:idx_account_category_data,priority:2" json:"data"`
+	Data       string    `gorm:"type:text" json:"data"`
 	CreatedAt  time.Time `gorm:"index" json:"created_at"`
 	UpdatedAt  time.Time `gorm:"index" json:"updated_at"`
 }

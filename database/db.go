@@ -57,6 +57,12 @@ func InitDB() {
 		logger.Error.Fatal("Failed to migrate database:", err)
 	}
 
+	// Drop legacy unique index on (category_id, data) — text columns are not suitable for btree indexes.
+	if DB.Migrator().HasIndex(&Account{}, "idx_account_category_data") {
+		DB.Migrator().DropIndex(&Account{}, "idx_account_category_data")
+		logger.Info.Println("Dropped legacy index idx_account_category_data")
+	}
+
 	// One-time migration: copy old history_limit to new split fields
 	migrateHistoryLimit()
 

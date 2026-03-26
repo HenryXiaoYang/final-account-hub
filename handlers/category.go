@@ -161,11 +161,7 @@ func TestValidationScript(c *gin.Context) {
 		return
 	}
 
-	script := fmt.Sprintf(`%s
-used, banned = validate(%q)
-print(used)
-print(banned)
-`, req.Script, req.TestAccount)
+	script := validator.BuildTestScript(req.Script, req.TestAccount)
 
 	tmpFile, err := os.CreateTemp("", "validate-test-*.py")
 	if err != nil {
@@ -192,12 +188,17 @@ print(banned)
 		return
 	}
 
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	if len(lines) >= 2 {
-		c.JSON(http.StatusOK, gin.H{"success": true, "used": lines[0] == "True", "banned": lines[1] == "True"})
-	} else {
+	result, err := validator.ParseTestScriptOutput(output)
+	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "error": "invalid output: " + string(output)})
+		return
 	}
+
+	resp := gin.H{"success": true, "used": result.Used, "banned": result.Banned}
+	if result.UpdatedData != nil {
+		resp["updated_data"] = *result.UpdatedData
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 func GetValidationRuns(c *gin.Context) {

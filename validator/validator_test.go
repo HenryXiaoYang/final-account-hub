@@ -219,3 +219,55 @@ func TestBuildBatchScript_ErrorHandling(t *testing.T) {
 		t.Error("batch script should capture error messages in results")
 	}
 }
+
+func TestBuildBatchScript_ContainsUpdateAccountHelper(t *testing.T) {
+	script := buildBatchScript("def validate(data): return (False, False)")
+
+	checks := []string{
+		"def update_account(*, data=_UNSET):",
+		"def set_account_data(data):",
+		`_result["data"] = _account_updates["data"]`,
+	}
+	for _, check := range checks {
+		if !strings.Contains(script, check) {
+			t.Errorf("batch script missing expected helper content: %q", check)
+		}
+	}
+}
+
+func TestBuildTestScript_ContainsUpdateAccountHelper(t *testing.T) {
+	script := BuildTestScript("def validate(data): return (False, False)", "hello")
+
+	checks := []string{
+		"def update_account(*, data=_UNSET):",
+		"def set_account_data(data):",
+		testResultSentinel,
+		`_result["updated_data"] = _account_updates["data"]`,
+	}
+	for _, check := range checks {
+		if !strings.Contains(script, check) {
+			t.Errorf("test script missing expected helper content: %q", check)
+		}
+	}
+}
+
+func TestParseTestScriptOutput_Success(t *testing.T) {
+	output := []byte("debug line\n" + testResultSentinel + "\n{\"used\":true,\"banned\":false,\"updated_data\":\"rewritten\"}\n")
+
+	result, err := ParseTestScriptOutput(output)
+	if err != nil {
+		t.Fatalf("expected parse to succeed, got error: %v", err)
+	}
+	if !result.Used || result.Banned {
+		t.Fatalf("unexpected status result: %+v", result)
+	}
+	if result.UpdatedData == nil || *result.UpdatedData != "rewritten" {
+		t.Fatalf("expected updated data to be parsed, got %+v", result)
+	}
+}
+
+func TestParseTestScriptOutput_MissingSentinel(t *testing.T) {
+	if _, err := ParseTestScriptOutput([]byte("{\"used\":false,\"banned\":false}")); err == nil {
+		t.Fatal("expected parse to fail when sentinel is missing")
+	}
+}

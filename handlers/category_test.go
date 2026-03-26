@@ -3,6 +3,8 @@ package handlers
 import (
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -10,6 +12,22 @@ import (
 	"final-account-hub/testutil"
 	"final-account-hub/validator"
 )
+
+func writeFakeCategoryPython(t *testing.T, categoryID uint, script string) string {
+	t.Helper()
+	venvDir := filepath.Join(".", "data", "venvs", fmt.Sprintf("%d", categoryID), "bin")
+	if err := os.MkdirAll(venvDir, 0755); err != nil {
+		t.Fatalf("failed to create fake venv dir: %v", err)
+	}
+	pythonPath := filepath.Join(venvDir, "python")
+	if err := os.WriteFile(pythonPath, []byte(script), 0755); err != nil {
+		t.Fatalf("failed to write fake python executable: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.RemoveAll(filepath.Join(".", "data", "venvs", fmt.Sprintf("%d", categoryID)))
+	})
+	return pythonPath
+}
 
 // ---------------------------------------------------------------------------
 // CreateCategory
@@ -357,6 +375,63 @@ func TestUpdateCategoryValidationScript_InvalidScope(t *testing.T) {
 	w := testutil.DoRequest(router, http.MethodPut, fmt.Sprintf("/api/categories/%d/validation-script", cat.ID), body, "")
 
 	testutil.AssertStatus(t, w, http.StatusBadRequest)
+}
+
+// ---------------------------------------------------------------------------
+// TestValidationScript
+// ---------------------------------------------------------------------------
+
+func TestTestValidationScript_SuccessWithUpdatedData(t *testing.T) {
+	testutil.SetupTestDB(t)
+	cat := testutil.SeedCategory(t, "PyScriptCat")
+	writeFakeCategoryPython(t, cat.ID, `#!/bin/sh
+if ! grep -Fq 'def update_account(*, data=_UNSET):' "$1"; then
+  echo "missing update_account helper" >&2
+  exit 1
+fi
+if ! grep -Fq 'update_account(data="rewritten")' "$1"; then
+  echo "missing user script" >&2
+  exit 1
+fi
+printf 'debug line\n---TEST_RESULT---\n{"used":false,"banned":true,"updated_data":"rewritten"}\n'
+`)
+
+	router := testutil.SetupTestRouter()
+	router.POST("/api/categories/:id/test-validation", TestValidationScript)
+
+	body := testutil.MakeJSON(t, map[string]string{
+		"script":       "def validate(account):\n    update_account(data=\"rewritten\")\n    print(\"debug from script\")\n    return False, True",
+		"test_account": "user:pass",
+	})
+	w := testutil.DoRequest(router, http.MethodPost, fmt.Sprintf("/api/categories/%d/test-validation", cat.ID), body, "")
+
+	testutil.AssertStatus(t, w, http.StatusOK)
+	data := testutil.ParseJSON(t, w)
+	testutil.AssertJSONField(t, data, "success", true)
+	testutil.AssertJSONField(t, data, "used", false)
+	testutil.AssertJSONField(t, data, "banned", true)
+	testutil.AssertJSONField(t, data, "updated_data", "rewritten")
+}
+
+func TestTestValidationScript_InvalidOutput(t *testing.T) {
+	testutil.SetupTestDB(t)
+	cat := testutil.SeedCategory(t, "PyScriptBadOutput")
+	writeFakeCategoryPython(t, cat.ID, `#!/bin/sh
+printf 'not-json-output\n'
+`)
+
+	router := testutil.SetupTestRouter()
+	router.POST("/api/categories/:id/test-validation", TestValidationScript)
+
+	body := testutil.MakeJSON(t, map[string]string{
+		"script":       "def validate(account):\n    return False, False",
+		"test_account": "user:pass",
+	})
+	w := testutil.DoRequest(router, http.MethodPost, fmt.Sprintf("/api/categories/%d/test-validation", cat.ID), body, "")
+
+	testutil.AssertStatus(t, w, http.StatusOK)
+	data := testutil.ParseJSON(t, w)
+	testutil.AssertJSONField(t, data, "success", false)
 }
 
 // ---------------------------------------------------------------------------

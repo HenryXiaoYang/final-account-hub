@@ -44,6 +44,12 @@ const defaultScript = `def validate(account: str) -> tuple[bool, bool]:
     # Return (used, banned)
     return False, False`
 
+const helperExample = `def validate(account: str) -> tuple[bool, bool]:
+    refreshed = refresh_token(account)
+    if refreshed != account:
+        update_account(data=refreshed)
+    return False, False`
+
 const SCOPE_OPTIONS = ['available', 'used', 'banned'] as const
 
 export function ValidationTab({
@@ -69,7 +75,7 @@ export function ValidationTab({
   const [confirmDesc, setConfirmDesc] = useState('')
   const [confirmAction, setConfirmAction] = useState<() => void>(() => {})
   const [testAccount, setTestAccount] = useState('')
-  const [testResult, setTestResult] = useState<{ success: boolean; used?: boolean; banned?: boolean; error?: string } | null>(null)
+  const [testResult, setTestResult] = useState<{ success: boolean; used?: boolean; banned?: boolean; updated_data?: string; error?: string } | null>(null)
   const [testLoading, setTestLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [savingHistoryLimit, setSavingHistoryLimit] = useState(false)
@@ -276,6 +282,22 @@ export function ValidationTab({
               <code className="text-xs bg-[var(--muted)] px-1.5 py-0.5 rounded ml-1">{t('validation.scriptPrompt')}</code>
             </p>
 
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--muted)]/50 p-3">
+              <div className="space-y-1.5 text-xs">
+                <p className="font-medium text-[var(--foreground)]">{t('validation.helperTitle')}</p>
+                <p className="text-[var(--muted-foreground)]">{t('validation.helperDesc')}</p>
+                <p className="text-[var(--muted-foreground)]">{t('validation.helperRuleCurrent')}</p>
+                <p className="text-[var(--muted-foreground)]">{t('validation.helperRuleDuplicate')}</p>
+                <p className="text-[var(--muted-foreground)]">{t('validation.helperRuleTest')}</p>
+              </div>
+              <div className="mt-3 space-y-1.5">
+                <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--muted-foreground)]">{t('validation.helperExample')}</p>
+                <pre className="overflow-x-auto rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-[11px] leading-relaxed text-[var(--foreground)]">
+                  <code>{helperExample}</code>
+                </pre>
+              </div>
+            </div>
+
             {/* Monaco editor */}
             <div className="border border-[var(--border)] rounded-lg overflow-hidden" style={{ height: 280 }}>
               <Suspense fallback={<div className="flex items-center justify-center h-full"><Loader2 className="h-5 w-5 animate-spin text-[var(--muted-foreground)]" /></div>}>
@@ -346,7 +368,12 @@ export function ValidationTab({
           {testResult && (
             <div className={`mt-3 p-2.5 rounded-lg border text-xs ${testResult.success ? 'border-[var(--success)] bg-[var(--success)]/15' : 'border-[var(--danger)] bg-[var(--danger)]/15'}`} role="status">
               {testResult.success ? (
-                <span><span className="font-medium">{t('validation.result')}:</span> used={String(testResult.used)}, banned={String(testResult.banned)}</span>
+                <div className="space-y-1">
+                  <div><span className="font-medium">{t('validation.result')}:</span> used={String(testResult.used)}, banned={String(testResult.banned)}</div>
+                  {testResult.updated_data !== undefined && (
+                    <div><span className="font-medium">{t('accounts.data')}:</span> <code>{testResult.updated_data}</code></div>
+                  )}
+                </div>
               ) : (
                 <div><span className="font-medium">{t('common.error')}:</span><pre className="mt-1 whitespace-pre-wrap break-words">{testResult.error}</pre></div>
               )}

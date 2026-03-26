@@ -130,9 +130,15 @@ const en = {
     title: 'Validation',
     scriptTitle: 'Validation Script (Python)',
     scriptDesc:
-      'Define a validate(account) function that returns (used, banned). Which accounts are checked depends on the scope below. AI prompt for generating a script:',
+      'Define a validate(account) function that returns (used, banned). To rewrite the current account data, call the built-in helper update_account(data="new data"). Which accounts are checked depends on the scope below. AI prompt for generating a script:',
     scriptPrompt:
-      'Write a Python function validate(account: str) -> tuple[bool, bool] that returns (used, banned). Account format: [YOUR_FORMAT]. Validation logic: [YOUR_LOGIC].',
+      'Write a Python function validate(account: str) -> tuple[bool, bool] that returns (used, banned). To rewrite the current account data, call update_account(data="new account data"). Account format: [YOUR_FORMAT]. Validation logic: [YOUR_LOGIC].',
+    helperTitle: 'Rewrite Account Data In Script',
+    helperDesc: 'Validation scripts can call a built-in helper to update the account currently being processed.',
+    helperRuleCurrent: 'Only the current account is rewritten; other accounts are not affected.',
+    helperRuleDuplicate: 'If the new data duplicates another account in the same category, the backend skips the rewrite and records the reason in the run log.',
+    helperRuleTest: 'When you click "Test" below, the result panel also shows updated_data so you can verify the rewritten value.',
+    helperExample: 'Example',
     cron: 'Schedule',
     concurrency: 'Workers',
     historyLimit: 'Keep last',

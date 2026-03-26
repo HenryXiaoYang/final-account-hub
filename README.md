@@ -97,12 +97,12 @@ GORM `AutoMigrate` runs on every startup. Schema changes (new tables, new column
 
 ### Validation Engine
 
-Each category can define a Python validation script with a `validate(account: str) -> tuple[bool, bool]` function. The scheduler:
+Each category can define a Python validation script with a `validate(account: str) -> tuple[bool, bool]` function. Scripts can also call the built-in helper `update_account(data="...")` to rewrite the current account data. The scheduler:
 
 1. Reads the cron expression from the category configuration
 2. Selects accounts matching the configured scope (`available`, `used`, `banned`, or any combination)
 3. Runs the script against each account with the configured concurrency level
-4. Updates account status based on the `(used, banned)` return value
+4. Updates account status based on the `(used, banned)` return value and applies any `update_account(data="...")` rewrite
 5. Records the run with detailed logs
 
 Scripts execute in per-category virtual environments at `./data/venvs/{category_id}/`, managed by `uv`. Dependencies can be installed through the web UI or via `requirements.txt` upload.
@@ -596,11 +596,22 @@ def validate(account: str) -> tuple[bool, bool]:
     return True, False       # used / invalid
 ```
 
+Inside `validate`, you can optionally rewrite the current account data:
+
+```python
+def validate(account: str) -> tuple[bool, bool]:
+    refreshed = refresh_token(account)
+    if refreshed != account:
+        update_account(data=refreshed)
+    return False, False
+```
+
 ### Script Execution Details
 
 - Scripts run in the category's isolated venv at `./data/venvs/{category_id}/`
 - If no venv exists, `uv run --isolated --no-project` is used as fallback
 - Each account is validated independently with the configured concurrency
+- Validation scripts can call `update_account(data="...")` or `set_account_data("...")` to rewrite the current account's stored data
 - A 30-second timeout applies to test runs; production runs have no per-account timeout
 - stdout/stderr from each validation is captured in the run log
 

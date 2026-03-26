@@ -130,9 +130,15 @@ const zh = {
     title: '验证',
     scriptTitle: '验证脚本 (Python)',
     scriptDesc:
-      '定义 validate(account) 函数，返回 (used, banned)。验证哪些账号取决于下方的范围设置。AI 生成脚本的提示词：',
+      '定义 validate(account) 函数，返回 (used, banned)。如需修改当前账号数据，可调用内置 helper：update_account(data="新数据")。验证哪些账号取决于下方的范围设置。AI 生成脚本的提示词：',
     scriptPrompt:
-      '编写 Python 函数 validate(account: str) -> tuple[bool, bool]，返回 (used, banned)。账号格式：[你的格式]。验证逻辑：[你的逻辑]。',
+      '编写 Python 函数 validate(account: str) -> tuple[bool, bool]，返回 (used, banned)。如需修改当前账号数据，可调用 update_account(data="新的账号数据")。账号格式：[你的格式]。验证逻辑：[你的逻辑]。',
+    helperTitle: '脚本内改写账号数据',
+    helperDesc: '验证脚本可以调用内置 helper 来更新当前正在处理的账号数据。',
+    helperRuleCurrent: '只会改写当前这条账号，不会批量影响其他账号。',
+    helperRuleDuplicate: '如果新数据和当前分类中的其他账号重复，后端会跳过这次改写，并在运行日志里记录原因。',
+    helperRuleTest: '点击下方“测试”时，结果面板会额外显示 updated_data，方便确认脚本改写后的值。',
+    helperExample: '示例',
     cron: '定时',
     concurrency: '并发',
     historyLimit: '保留最近',

@@ -18,19 +18,29 @@ import (
 )
 
 const defaultBatchSize = 50
+const batchResultSentinel = "---BATCH_RESULT---"
+const testResultSentinel = "---TEST_RESULT---"
 
 // batchResult represents the JSON output from a batch validation script for one account.
 type batchResult struct {
-	ID     uint   `json:"id"`
-	Used   bool   `json:"used"`
-	Banned bool   `json:"banned"`
-	Error  string `json:"error,omitempty"`
+	ID     uint    `json:"id"`
+	Used   bool    `json:"used"`
+	Banned bool    `json:"banned"`
+	Data   *string `json:"data,omitempty"`
+	Error  string  `json:"error,omitempty"`
 }
 
 // batchInputItem is the JSON input format for each account in a batch.
 type batchInputItem struct {
 	ID   uint   `json:"id"`
 	Data string `json:"data"`
+}
+
+// TestScriptResult is the structured output returned by test-validation runs.
+type TestScriptResult struct {
+	Used        bool    `json:"used"`
+	Banned      bool    `json:"banned"`
+	UpdatedData *string `json:"updated_data,omitempty"`
 }
 
 var cronScheduler *cron.Cron
@@ -300,12 +310,11 @@ func validateCategory(cat database.Category) {
 				return
 			}
 
-			// Parse output: everything before "---BATCH_RESULT---" is script output,
-			// the line after is JSON results
+			// Parse output: everything before the sentinel is script output,
+			// the content after is JSON results.
 			var results []batchResult
-			sentinel := "---BATCH_RESULT---"
-			sentinelIdx := strings.LastIndex(outputStr, sentinel)
-			if sentinelIdx < 0 {
+			scriptOutput, resultJSON, err := splitSentinelOutput(outputStr, batchResultSentinel)
+			if err != nil {
 				appendLog(fmt.Sprintf("[%s] [W%d] Batch %d: ERROR - no result sentinel found in output: %s",
 					time.Now().Format("15:04:05"), worker, batchIdx+1, outputStr))
 				newCount := atomic.AddInt32(&processedCount, int32(len(batch)))
@@ -313,14 +322,11 @@ func validateCategory(cat database.Category) {
 				return
 			}
 
-			// Log any script output before the sentinel
-			scriptOutput := strings.TrimSpace(outputStr[:sentinelIdx])
 			if scriptOutput != "" {
 				appendLog(fmt.Sprintf("[%s] [W%d] Batch %d output: %s",
 					time.Now().Format("15:04:05"), worker, batchIdx+1, scriptOutput))
 			}
 
-			resultJSON := strings.TrimSpace(outputStr[sentinelIdx+len(sentinel):])
 			if err := json.Unmarshal([]byte(resultJSON), &results); err != nil {
 				appendLog(fmt.Sprintf("[%s] [W%d] Batch %d: ERROR parsing results: %v",
 					time.Now().Format("15:04:05"), worker, batchIdx+1, err))
@@ -366,6 +372,24 @@ func validateCategory(cat database.Category) {
 			if len(bannedIDs) > 0 {
 				database.DB.Model(&database.Account{}).Where("id IN ?", bannedIDs).
 					Updates(map[string]interface{}{"used": false, "banned": true})
+			}
+			for _, r := range results {
+				if r.Data == nil {
+					continue
+				}
+				var existing database.Account
+				if database.DB.Select("id").Where("category_id = ? AND data = ? AND id != ?", cat.ID, *r.Data, r.ID).First(&existing).Error == nil {
+					appendLog(fmt.Sprintf("[%s] [W%d] Account %d: DATA UPDATE SKIPPED - duplicate data in category",
+						time.Now().Format("15:04:05"), worker, r.ID))
+					continue
+				}
+				if err := database.DB.Model(&database.Account{}).Where("id = ?", r.ID).Update("data", *r.Data).Error; err != nil {
+					appendLog(fmt.Sprintf("[%s] [W%d] Account %d: DATA UPDATE ERROR - %v",
+						time.Now().Format("15:04:05"), worker, r.ID, err))
+					continue
+				}
+				appendLog(fmt.Sprintf("[%s] [W%d] Account %d: DATA UPDATED",
+					time.Now().Format("15:04:05"), worker, r.ID))
 			}
 
 			// Update progress once per batch
@@ -444,6 +468,66 @@ func buildScopeConditions(scope string) string {
 	return strings.Join(conditions, " OR ")
 }
 
+func validationScriptHelpers() string {
+	return `
+_UNSET = object()
+_account_updates = {}
+
+def update_account(*, data=_UNSET):
+    if data is not _UNSET:
+        _account_updates["data"] = data
+
+def set_account_data(data):
+    update_account(data=data)
+`
+}
+
+func splitSentinelOutput(output string, sentinel string) (string, string, error) {
+	trimmed := strings.TrimSpace(output)
+	sentinelIdx := strings.LastIndex(trimmed, sentinel)
+	if sentinelIdx < 0 {
+		return "", "", fmt.Errorf("no result sentinel found")
+	}
+	return strings.TrimSpace(trimmed[:sentinelIdx]), strings.TrimSpace(trimmed[sentinelIdx+len(sentinel):]), nil
+}
+
+// BuildTestScript generates a Python script for the test-validation endpoint.
+// It preserves the legacy validate(account) contract and exposes update_account(data=...)
+// for optional account data rewrites.
+func BuildTestScript(validationScript string, testAccount string) string {
+	return fmt.Sprintf(`# /// script
+# requires-python = ">=3.11"
+# ///
+import json
+
+%s
+
+%s
+
+_account_updates = {}
+_used, _banned = validate(%q)
+_result = {"used": bool(_used), "banned": bool(_banned)}
+if "data" in _account_updates:
+    _result["updated_data"] = _account_updates["data"]
+print("%s")
+print(json.dumps(_result))
+`, validationScript, validationScriptHelpers(), testAccount, testResultSentinel)
+}
+
+// ParseTestScriptOutput extracts the structured result from a test-validation run.
+// Any stdout before the sentinel is treated as debug output and ignored for parsing.
+func ParseTestScriptOutput(output []byte) (TestScriptResult, error) {
+	var result TestScriptResult
+	_, resultJSON, err := splitSentinelOutput(string(output), testResultSentinel)
+	if err != nil {
+		return result, err
+	}
+	if err := json.Unmarshal([]byte(resultJSON), &result); err != nil {
+		return result, err
+	}
+	return result, nil
+}
+
 // buildBatchScript generates a Python script that calls the user's validate() function
 // for each account in a JSON input file and outputs structured JSON results.
 // The user's validation script is embedded unchanged — only the harness around it changes.
@@ -455,18 +539,24 @@ import json, sys
 
 %s
 
+%s
+
 with open(sys.argv[1]) as _f:
     _accounts = json.load(_f)
 _results = []
 for _acc in _accounts:
     try:
+        _account_updates = {}
         _used, _banned = validate(_acc["data"])
-        _results.append({"id": _acc["id"], "used": bool(_used), "banned": bool(_banned)})
+        _result = {"id": _acc["id"], "used": bool(_used), "banned": bool(_banned)}
+        if "data" in _account_updates:
+            _result["data"] = _account_updates["data"]
+        _results.append(_result)
     except Exception as _e:
         _results.append({"id": _acc["id"], "error": str(_e)})
-print("---BATCH_RESULT---")
+print("%s")
 print(json.dumps(_results))
-`, validationScript)
+`, validationScript, validationScriptHelpers(), batchResultSentinel)
 }
 
 // splitIntoBatches divides a slice of accounts into chunks of the given size.

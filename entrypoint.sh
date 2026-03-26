@@ -1,4 +1,6 @@
 #!/bin/sh
+set -eu
+
 mkdir -p /app/data/venvs
 chown -R appuser:appgroup /app/data
-exec su-exec appuser "$@"
+exec gosu appuser "$@"

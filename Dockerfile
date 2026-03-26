@@ -5,19 +5,28 @@ RUN npm ci
 COPY frontend/ .
 RUN npm run build
 
-FROM golang:1.25-alpine AS builder
-RUN apk add --no-cache gcc musl-dev
+FROM golang:1.25-bookworm AS builder
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=1 go build -ldflags="-s -w" -o main .
 
-FROM alpine:3.20
-RUN apk add --no-cache libc6-compat curl gcc g++ musl-dev libffi-dev openssl-dev curl-dev su-exec && rm -rf /var/cache/apk/*
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    gcc \
+    g++ \
+    libffi-dev \
+    libssl-dev \
+    libcurl4-openssl-dev \
+    gosu \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 RUN uv python install 3.12 && rm -rf /root/.cache
-RUN addgroup -g 1000 appgroup && adduser -u 1000 -G appgroup -D appuser
+RUN groupadd -g 1000 appgroup && useradd -u 1000 -g appgroup -m -d /home/appuser -s /usr/sbin/nologin appuser
 WORKDIR /app
 COPY --from=builder /app/main .
 COPY --from=frontend /app/frontend/dist ./frontend/dist

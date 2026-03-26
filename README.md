@@ -38,7 +38,7 @@ cp .env.example .env
 docker compose up -d
 ```
 
-The container bundles `uv` and Python 3.12. Data is persisted to `./data/` via volume mount.
+The container bundles `uv` and Python 3.12. The runtime image is based on `debian:bookworm-slim` for broader Python package compatibility (for example `curl-cffi`). Data is persisted to `./data/` via volume mount.
 
 ### Manual
 

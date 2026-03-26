@@ -38,7 +38,7 @@ cp .env.example .env
 docker compose up -d
 ```
 
-容器内置 `uv` 和 Python 3.12。数据通过卷挂载持久化到 `./data/` 目录。
+容器内置 `uv` 和 Python 3.12。运行时镜像改为 `debian:bookworm-slim`，以获得更好的 Python 包兼容性（例如 `curl-cffi`）。数据通过卷挂载持久化到 `./data/` 目录。
 
 ### 手动部署
 
